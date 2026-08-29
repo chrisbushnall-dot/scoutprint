@@ -12,9 +12,11 @@ document.addEventListener("DOMContentLoaded",init);
 async function init(){
   bindNavigation(); bindControls();
   try{
-    const response=await fetch("data/profiles.json");
-    if(!response.ok)throw new Error(`Data request failed (${response.status})`);
-    state.data=await response.json();
+    const response=await fetch("data/index.json");
+    if(!response.ok)throw new Error(`Dataset index request failed (${response.status})`);
+    const index=await response.json();
+    const chunks=await Promise.all(index.chunks.map(async path=>{const part=await fetch(`data/${path}`);if(!part.ok)throw new Error(`Dataset chunk failed (${part.status})`);return part.json()}));
+    state.data={meta:index.meta,players:chunks.flat()};
     populateControls();
     const salah=state.data.players.find(p=>p.player_name.includes("Salah"));
     $("#reference").value=salah?.player_season_id||state.data.players[0].player_season_id;

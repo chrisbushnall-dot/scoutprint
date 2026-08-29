@@ -13,3 +13,4 @@ data/state/*
 data/*.duckdb
 !data/**/.gitkeep
 .vercel
+web/data/profiles.json
