@@ -99,7 +99,7 @@ async function searchReferences(){
   if(!payload.players.length){state.reference=null;$("#reference-name").textContent="No matching player-season";return;}
   if(payload.players.some(player=>player.player_season_id===current))$("#reference").value=current;
   else{
-    const salah=payload.players.find(player=>player.player_name==="Mohamed Salah"&&player.competition_name==="Premier League"&&player.season_name==="2017/18");
+    const salah=payload.players.find(player=>player.player_name.includes("Mohamed Salah")&&player.competition_name==="Premier League"&&player.season_name==="2017/18");
     $("#reference").value=(salah||payload.players[0]).player_season_id;
   }
   await setReference();
