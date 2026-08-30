@@ -129,7 +129,7 @@ def rank_similar(
     coverage_weight = np.zeros(len(frame))
     missing_by_row: list[list[str]] = [[] for _ in range(len(frame))]
     spatial_available = (
-        frame["spatial_available"].fillna(False).to_numpy(dtype=bool)
+        frame["spatial_available"].astype("boolean").fillna(False).to_numpy(dtype=bool)
         if "spatial_available" in frame
         else np.ones(len(frame), dtype=bool)
     )

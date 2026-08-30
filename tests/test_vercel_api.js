@@ -72,5 +72,6 @@ test("mobile results stay inside the viewport", () => {
   assert.match(styles, /html\{[^}]*overflow-x:clip/);
   assert.match(styles, /\.shell\{[^}]*max-width:calc\(100vw - 20px\)/);
   assert.match(styles, /\.table-shell table\{[^}]*min-width:0[^}]*table-layout:fixed/);
+  assert.match(styles, /\.table-shell th\{position:static/);
   assert.match(styles, /\.player-column\{min-width:0\}/);
 });

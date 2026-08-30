@@ -36,8 +36,8 @@
 
     <main id="main" class="shell">
       <section id="search-view">
-        <header class="page-head">
-          <div><p class="kicker">REFERENCE → RECENT DISCOVERY</p><h1>Find the next fit.</h1></div>
+        <header class="page-head compact-head">
+          <div><p class="kicker">REFERENCE → RECENT DISCOVERY</p><h1>Scouting search</h1></div>
           <div class="data-summary" aria-label="Recent searchable coverage"><div><strong id="player-count">—</strong><span>players</span></div><div><strong id="profile-count">—</strong><span>player-seasons</span></div><div><strong id="window-count">—</strong><span>recent windows</span></div></div>
         </header>
 
@@ -49,8 +49,8 @@
               <div id="reference-options" class="autocomplete-menu" role="listbox" hidden></div>
             </div>
           </div>
-          <div><label for="reference-competition">Reference league</label><select id="reference-competition"></select></div>
           <div><label for="reference-season">Reference season</label><select id="reference-season"></select></div>
+          <div><label for="reference-competition">Reference league</label><select id="reference-competition"></select></div>
           <div><label for="min-minutes">Minimum minutes</label><input id="min-minutes" type="number" min="0" step="90" value="900"></div>
           <label class="switch-field" for="mirror-mode"><span>Mirror role<small>Opposite flank</small></span><input id="mirror-mode" type="checkbox" checked><i></i></label>
           <button id="search-button" class="button primary search-button" type="submit"><span>Search</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
@@ -70,7 +70,7 @@
           <div><label for="age-min">Minimum age</label><input id="age-min" type="number" min="10" max="60" placeholder="Any"></div>
           <div><label for="age-max">Maximum age</label><input id="age-max" type="number" min="10" max="60" placeholder="Any"></div>
           <div><label for="min-profile">Minimum profile</label><input id="min-profile" type="number" min="0" max="100" value="0"></div>
-          <div><label for="min-coverage">Minimum coverage</label><input id="min-coverage" type="number" min="0" max="100" value="0"></div>
+          <div><label for="min-coverage">Minimum coverage</label><input id="min-coverage" type="number" min="0" max="100" value="40"></div>
           <fieldset class="tier-filter"><legend>Data tier</legend><label><input type="checkbox" name="tier" value="A" checked>A</label><label><input type="checkbox" name="tier" value="B" checked>B</label><label><input type="checkbox" name="tier" value="C" checked>C</label></fieldset>
           <button id="apply-filters" class="button secondary" type="button">Apply filters</button>
         </section>
@@ -81,7 +81,7 @@
           <div id="list-results" class="table-shell surface" hidden>
             <table aria-label="Ranked recent player recommendations">
               <thead><tr>
-                <th><button data-sort="profile_match">REC</button></th>
+                <th><button data-sort="recommendation_score">REC</button></th>
                 <th class="player-column">Player</th>
                 <th class="col-position">Position</th><th class="col-club">Club</th><th class="col-league">League</th><th class="col-season">Season</th>
                 <th class="numeric"><button data-sort="age">Age</button></th><th class="numeric col-minutes"><button data-sort="minutes">Minutes</button></th>
@@ -103,6 +103,7 @@
           <header class="detail-head surface"><div><p class="kicker">PLAYER COMPARISON</p><h1 id="detail-title"></h1><p id="detail-context"></p></div><div id="detail-scores" class="detail-scores"></div></header>
           <div id="tier-notice" class="tier-notice" hidden>Spatial comparison unavailable for this player-season. The statistical comparison remains active.</div>
           <section class="versus-grid"><article id="reference-card" class="profile-card surface"></article><article id="candidate-card" class="profile-card surface"></article></section>
+          <section class="explanation-section surface"><div class="section-title"><div><p class="kicker">CALCULATED EXPLANATION</p><h2>Why they match</h2><p id="role-summary"></p></div></div><div class="explanation-grid"><article><h3>Top matching dimensions</h3><div id="why-match"></div></article><article><h3>Where they differ</h3><div id="where-differ"></div></article></div></section>
           <section id="maps-section" class="maps-section"><div class="section-title"><div><p class="kicker">SPATIAL EVIDENCE</p><h2>Where the profiles differ</h2></div><div id="map-tabs" class="map-tabs"></div></div><div class="map-grid"><article class="map-card surface"><h3 id="map-a-name"></h3><canvas id="map-a"></canvas></article><article class="map-card surface"><h3 id="map-b-name"></h3><canvas id="map-b"></canvas></article><article class="map-card surface"><h3>Candidate − reference</h3><canvas id="map-diff"></canvas></article></div></section>
           <section class="statistics-section surface"><div><p class="kicker">COMPARABLE STATISTICS</p><h2>Reference vs candidate</h2></div><div id="metric-comparison" class="metric-comparison"></div></section>
         </div>

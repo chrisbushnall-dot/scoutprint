@@ -15,19 +15,24 @@ def _profile(
     age: float | None,
     *,
     spatial: bool = True,
+    canonical_id: str | None = None,
+    position: str = "Forward",
+    season: str = "2023/24",
+    minutes: float = 1_800.0,
 ) -> dict[str, object]:
     grid = np.zeros((12, 8), dtype=float)
     grid[x, 5] = 1.0
     return {
         "player_season_id": player_id,
-        "canonical_player_id": f"canonical:{player_id}",
+        "canonical_player_id": canonical_id or f"canonical:{player_id}",
+        "canonical_person_id": canonical_id or f"canonical:{player_id}",
         "player_name": name,
         "team_name": "Test FC",
         "competition_name": "Test League",
-        "season_name": "2023/24",
-        "positions": "Forward",
+        "season_name": season,
+        "positions": position,
         "age": age,
-        "minutes": 1_800.0,
+        "minutes": minutes,
         "appearances": 25,
         "starts": 20,
         "source_provider": "fixture",
@@ -52,6 +57,29 @@ def _service() -> ExactScoutprintService:
         [
             _profile("reference", "Reference Player", 9, 30),
             _profile("candidate", "Candidate Player", 9, 21),
+            _profile(
+                "candidate-second-season",
+                "Candidate Player",
+                9,
+                22,
+                canonical_id="canonical:candidate",
+                season="2024/25",
+            ),
+            _profile(
+                "own-history",
+                "Reference Player",
+                9,
+                31,
+                canonical_id="canonical:reference",
+                season="2024/25",
+            ),
+            _profile(
+                "defender",
+                "Defender Player",
+                2,
+                24,
+                position="Centre Back",
+            ),
             _profile("unknown-age", "Unknown Age", 2, None),
             _profile("statistical", "Statistical Player", 0, 20, spatial=False),
         ]
@@ -80,7 +108,7 @@ def test_health_is_public_but_data_requires_server_secret(monkeypatch) -> None:
         "/recent/catalogue", headers={"X-Scoutprint-API-Key": "test-server-secret"}
     )
     assert catalogue.status_code == 200
-    assert catalogue.json()["recent_player_seasons"] == 4
+    assert catalogue.json()["recent_player_seasons"] == 7
 
 
 def test_exact_search_and_age_filter(monkeypatch) -> None:
@@ -141,3 +169,72 @@ def test_statistical_tier_c_candidate_is_ranked_without_fake_spatial_score(monke
     assert [item["player_season_id"] for item in payload["results"]] == ["statistical"]
     assert payload["results"][0]["data_tier"] == "C"
     assert payload["results"][0]["spatial_match"] is None
+
+
+def test_same_canonical_player_is_excluded_and_candidate_seasons_collapse(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    response = client.post(
+        "/search/similar",
+        headers={"X-Scoutprint-API-Key": "test-server-secret"},
+        json={
+            "reference_player_season_id": "reference",
+            "candidate_windows": ["2023/24"],
+            "minimum_comparison_coverage": 0,
+            "minimum_role_compatibility": 0,
+        },
+    )
+    results = response.json()["results"]
+    assert all(item["canonical_player_id"] != "canonical:reference" for item in results)
+    assert sum(item["canonical_player_id"] == "canonical:candidate" for item in results) == 1
+
+
+def test_role_incompatible_centre_back_is_filtered(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    response = client.post(
+        "/search/similar",
+        headers={"X-Scoutprint-API-Key": "test-server-secret"},
+        json={
+            "reference_player_season_id": "reference",
+            "candidate_windows": ["2023/24"],
+            "minimum_comparison_coverage": 0,
+        },
+    )
+    assert "defender" not in {item["player_season_id"] for item in response.json()["results"]}
+
+
+def test_low_coverage_adjusts_recommendation_not_raw_similarity(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    response = client.post(
+        "/search/similar",
+        headers={"X-Scoutprint-API-Key": "test-server-secret"},
+        json={
+            "reference_player_season_id": "reference",
+            "candidate_windows": ["2023/24"],
+            "data_tiers": ["C"],
+            "weights": {"Goal threat": 35, "Spatial role": 65},
+            "minimum_comparison_coverage": 0,
+            "minimum_role_compatibility": 0,
+        },
+    )
+    result = response.json()["results"][0]
+    assert result["recommendation_score"] < result["profile_match"]
+    assert result["confidence"] == "LOW"
+    assert result["spatial_match"] is None
+    assert all(
+        item["dimension"] != "Spatial role" for item in result["top_matching_dimensions"]
+    )
+
+
+def test_player_search_groups_profiles_by_canonical_person(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    response = client.get(
+        "/players?name=Candidate",
+        headers={"X-Scoutprint-API-Key": "test-server-secret"},
+    )
+    players = response.json()["players"]
+    assert len(players) == 1
+    assert players[0]["profile_count"] == 2
+    assert {item["season_name"] for item in players[0]["profiles"]} == {
+        "2023/24",
+        "2024/25",
+    }

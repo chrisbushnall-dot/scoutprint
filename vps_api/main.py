@@ -5,6 +5,7 @@ import math
 import os
 import re
 import time
+import unicodedata
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
@@ -15,6 +16,7 @@ import polars as pl
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 
+from similarity.roles import add_role_compatibility
 from similarity.search import CATEGORY_METRICS, rank_similar
 
 DEFAULT_WEIGHTS = {
@@ -112,8 +114,10 @@ class SimilarSearchRequest(BaseModel):
     minimum_age: float | None = Field(default=None, ge=10, le=60)
     maximum_age: float | None = Field(default=None, ge=10, le=60)
     mirror_mode: bool = True
-    minimum_comparison_coverage: float = Field(default=0, ge=0, le=100)
+    minimum_comparison_coverage: float = Field(default=40, ge=0, le=100)
     minimum_profile_match: float = Field(default=0, ge=0, le=100)
+    minimum_role_compatibility: float = Field(default=42, ge=0, le=100)
+    unique_players: bool = True
     result_limit: int = Field(default=25, ge=1, le=100)
     exact_shortlist_size: int = Field(default=120, ge=20, le=200)
     weights: dict[str, float] = Field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
@@ -172,7 +176,142 @@ class ExactScoutprintService:
         primary = frame[frame["is_primary_profile"].fillna(False)].copy()
         self.frame = primary.reset_index(drop=True)
         self.frame["candidate_window"] = self.frame.apply(self._candidate_window, axis=1)
+        self.frame["canonical_person_id"] = self._canonical_person_ids(self.frame)
         self.by_id = self.frame.set_index("player_season_id", drop=False)
+
+    @staticmethod
+    def _normalized_name(value: Any) -> str:
+        text = re.sub(
+            r"\\u([0-9a-fA-F]{4})",
+            lambda match: chr(int(match.group(1), 16)),
+            str(value or ""),
+        )
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(character for character in text if not unicodedata.combining(character))
+        return " ".join(re.findall(r"[a-z0-9]+", text.casefold()))
+
+    @classmethod
+    def _names_compatible(cls, left: Any, right: Any) -> bool:
+        left_tokens = cls._normalized_name(left).split()
+        right_tokens = cls._normalized_name(right).split()
+        if not left_tokens or not right_tokens or left_tokens[0] != right_tokens[0]:
+            return False
+        if left_tokens == right_tokens:
+            return True
+        shorter, longer = sorted((left_tokens, right_tokens), key=len)
+        return len(shorter) >= 2 and all(token in longer for token in shorter)
+
+    @classmethod
+    def _normalized_team(cls, value: Any) -> str:
+        ignored = {"fc", "cf", "sc", "club", "football"}
+        return " ".join(
+            token
+            for token in cls._normalized_name(value).split()
+            if token not in ignored and not token.isdigit()
+        )
+
+    @classmethod
+    def _canonical_person_ids(cls, frame: pd.DataFrame) -> pd.Series:
+        """Reconcile canonical aliases using existing identity evidence only.
+
+        This closes conservative cross-provider gaps such as full-name versus abbreviated-name
+        records. A merge requires either the same DOB plus compatible names, or compatible
+        first/surname evidence plus an overlapping normalized team-season.
+        """
+
+        canonical_ids = sorted(frame["canonical_player_id"].dropna().astype(str).unique())
+        parent = {value: value for value in canonical_ids}
+
+        def find(value: str) -> str:
+            while parent[value] != value:
+                parent[value] = parent[parent[value]]
+                value = parent[value]
+            return value
+
+        def union(left: str, right: str) -> None:
+            left_root, right_root = find(left), find(right)
+            if left_root != right_root:
+                parent[max(left_root, right_root)] = min(left_root, right_root)
+
+        evidence: dict[str, dict[str, set[str]]] = {}
+        evidence_columns = [
+            "canonical_player_id",
+            "player_name",
+            "canonical_birth_date",
+            "birth_date",
+            "canonical_nationality",
+            "nationality",
+            "team_name",
+            "season_start_year",
+        ]
+        for row in frame[evidence_columns].itertuples(index=False):
+            if pd.isna(row.canonical_player_id):
+                continue
+            item = evidence.setdefault(
+                str(row.canonical_player_id),
+                {
+                    "names": set(),
+                    "raw_names": set(),
+                    "dobs": set(),
+                    "nationalities": set(),
+                    "team_seasons": set(),
+                },
+            )
+            if pd.notna(row.player_name):
+                item["names"].add(cls._normalized_name(row.player_name))
+                item["raw_names"].add(str(row.player_name))
+            for value in (row.canonical_birth_date, row.birth_date):
+                if pd.notna(value):
+                    item["dobs"].add(str(value))
+            for value in (row.canonical_nationality, row.nationality):
+                if pd.notna(value):
+                    item["nationalities"].add(cls._normalized_name(value))
+            if pd.notna(row.team_name) and pd.notna(row.season_start_year):
+                item["team_seasons"].add(
+                    f"{cls._normalized_team(row.team_name)}:{row.season_start_year}"
+                )
+        by_dob: dict[str, set[str]] = {}
+        by_name_anchor: dict[tuple[str, str], set[str]] = {}
+        for canonical_id, item in evidence.items():
+            for dob in item["dobs"]:
+                by_dob.setdefault(dob, set()).add(canonical_id)
+            for normalized_name in item["names"]:
+                tokens = normalized_name.split()
+                if len(tokens) >= 2:
+                    by_name_anchor.setdefault((tokens[0], tokens[-1]), set()).add(
+                        canonical_id
+                    )
+
+        for group in by_dob.values():
+            ordered = sorted(group)
+            for index, left in enumerate(ordered):
+                for right in ordered[index + 1 :]:
+                    if any(
+                        cls._names_compatible(left_name, right_name)
+                        for left_name in evidence[left]["raw_names"]
+                        for right_name in evidence[right]["raw_names"]
+                    ):
+                        union(left, right)
+
+        for group in by_name_anchor.values():
+            ordered = sorted(group)
+            for index, left in enumerate(ordered):
+                a = evidence[left]
+                for right in ordered[index + 1 :]:
+                    b = evidence[right]
+                    names_compatible = any(
+                        cls._names_compatible(left_name, right_name)
+                        for left_name in a["raw_names"]
+                        for right_name in b["raw_names"]
+                    )
+                    shared_team_season = bool(
+                        a["team_seasons"].intersection(b["team_seasons"])
+                    )
+                    if names_compatible and shared_team_season:
+                        union(left, right)
+        return frame["canonical_player_id"].map(
+            lambda value: find(str(value)) if pd.notna(value) else None
+        )
 
     @staticmethod
     def _candidate_window(row: pd.Series) -> str | None:
@@ -207,6 +346,9 @@ class ExactScoutprintService:
     def candidate_frame(self, request: SimilarSearchRequest) -> tuple[pd.DataFrame, pd.Series]:
         reference = self._reference(request)
         candidates = self.recent_frame if request.recent_candidates_only else self.frame
+        reference_person_id = reference.get("canonical_person_id")
+        if pd.notna(reference_person_id):
+            candidates = candidates[candidates["canonical_person_id"] != reference_person_id]
         if request.candidate_competitions:
             candidates = candidates[
                 candidates["competition_name"].isin(request.candidate_competitions)
@@ -230,11 +372,60 @@ class ExactScoutprintService:
             candidates = candidates[candidates["age"].notna()]
             candidates = candidates[candidates["age"] <= request.maximum_age]
         reference_frame = self.by_id.loc[[request.reference_player_season_id]].reset_index(drop=True)
-        return (
+        role_pool = (
             pd.concat([candidates, reference_frame], ignore_index=True)
             .drop_duplicates("player_season_id")
-            .reset_index(drop=True),
-            reference,
+            .reset_index(drop=True)
+        )
+        role_pool, reference_roles = add_role_compatibility(
+            role_pool, request.reference_player_season_id
+        )
+        role_pool["Reference role families"] = [reference_roles] * len(role_pool)
+        compatible = role_pool[
+            (role_pool["player_season_id"] == request.reference_player_season_id)
+            | (role_pool["Role compatibility"] >= request.minimum_role_compatibility)
+        ]
+        return compatible.reset_index(drop=True), reference
+
+    @staticmethod
+    def _add_recommendation_evidence(ranked: pd.DataFrame) -> pd.DataFrame:
+        output = ranked.copy()
+        category_columns = ["Spatial role", *CATEGORY_METRICS]
+        meaningful = output[category_columns].notna().sum(axis=1)
+        coverage = output["Comparable profile coverage"].fillna(0).clip(0, 100) / 100
+        dimension_reliability = (meaningful / len(category_columns)).clip(0, 1)
+        minute_reliability = np.sqrt(output["minutes"].fillna(0).clip(lower=0) / 1800).clip(0, 1)
+        tier_reliability = output["data_tier"].map({"A": 1.0, "B": 0.92, "C": 0.86}).fillna(0.82)
+        evidence = (
+            0.6 * coverage
+            + 0.2 * dimension_reliability
+            + 0.15 * minute_reliability
+            + 0.05 * tier_reliability
+        )
+        output["Meaningful dimensions"] = meaningful
+        output["Evidence quality"] = 100 * evidence
+        output["Confidence factor"] = 0.55 + 0.45 * evidence
+        output["Recommendation"] = output["Overall"] * output["Confidence factor"]
+        output["Confidence label"] = np.select(
+            [evidence >= 0.8, evidence >= 0.62], ["HIGH", "MEDIUM"], default="LOW"
+        )
+        return output
+
+    @staticmethod
+    def _collapse_unique_players(ranked: pd.DataFrame) -> pd.DataFrame:
+        if ranked.empty:
+            return ranked
+        identity = ranked.get(
+            "canonical_person_id", ranked["canonical_player_id"]
+        ).fillna(ranked["canonical_player_id"])
+        ranked = ranked.assign(_identity=identity)
+        return (
+            ranked.sort_values(
+                ["Recommendation", "Overall", "Comparable profile coverage", "minutes"],
+                ascending=[False, False, False, False],
+            )
+            .drop_duplicates("_identity", keep="first")
+            .drop(columns="_identity")
         )
 
     def run_search(self, request: SimilarSearchRequest) -> tuple[pd.DataFrame, float]:
@@ -252,6 +443,13 @@ class ExactScoutprintService:
             ranked["Comparable profile coverage"] >= request.minimum_comparison_coverage
         ]
         ranked = ranked[ranked["Overall"] >= request.minimum_profile_match]
+        ranked = self._add_recommendation_evidence(ranked)
+        if request.unique_players:
+            ranked = self._collapse_unique_players(ranked)
+        ranked = ranked.sort_values(
+            ["Recommendation", "Overall", "Comparable profile coverage"],
+            ascending=[False, False, False],
+        ).reset_index(drop=True)
         return ranked, (time.perf_counter() - started) * 1000
 
     def result(self, row: pd.Series, rank: int) -> dict[str, Any]:
@@ -261,10 +459,22 @@ class ExactScoutprintService:
             if _safe(row.get(category)) is not None
         }
         missing = str(row.get("Unavailable dimensions") or "None")
+        ordered_categories = sorted(
+            categories.items(), key=lambda item: item[1], reverse=True
+        )
+        top_matches = [
+            {"dimension": category, "score": round(float(score), 1)}
+            for category, score in ordered_categories[:3]
+        ]
+        biggest_differences = [
+            {"dimension": category, "score": round(float(score), 1)}
+            for category, score in sorted(categories.items(), key=lambda item: item[1])[:2]
+        ]
+        person_id = _safe(row.get("canonical_person_id"))
         return {
             "rank": rank,
             "player_season_id": row["player_season_id"],
-            "canonical_player_id": row.get("canonical_player_id"),
+            "canonical_player_id": person_id or row.get("canonical_player_id"),
             "player_name": row["player_name"],
             "club": row.get("team_name"),
             "competition": row.get("competition_name"),
@@ -275,11 +485,20 @@ class ExactScoutprintService:
             "age": _safe(row.get("age")),
             "minutes": _safe(row.get("minutes")),
             "profile_match": _safe(row.get("Overall")),
+            "recommendation_score": _safe(row.get("Recommendation")),
+            "confidence_factor": _safe(row.get("Confidence factor")),
+            "confidence": row.get("Confidence label"),
+            "meaningful_dimensions": _safe(row.get("Meaningful dimensions")),
             "spatial_match": _safe(row.get("Spatial role")),
             "same_side_match": _safe(row.get("Same-side")),
             "mirrored_match": _safe(row.get("Mirrored")),
             "category_similarities": categories,
             "comparison_coverage": _safe(row.get("Comparable profile coverage")),
+            "role_compatibility": _safe(row.get("Role compatibility")),
+            "role_family": row.get("Role family"),
+            "reference_role_families": row.get("Reference role families") or {},
+            "top_matching_dimensions": top_matches,
+            "biggest_differences": biggest_differences,
             "xg": _safe(row.get("xg")),
             "xa": _safe(row.get("xa")),
             "xg_p90": _safe(row.get("xg_p90")),
@@ -298,7 +517,7 @@ class ExactScoutprintService:
             field.removesuffix("_available"): bool(_safe(row.get(field)) or False)
             for field in AVAILABILITY_FIELDS
         }
-        return {
+        profile = {
             **{field: _safe(row.get(field)) for field in PROFILE_FIELDS},
             "grid": [
                 int(row["grid_x"]) if pd.notna(row.get("grid_x")) else 12,
@@ -316,6 +535,10 @@ class ExactScoutprintService:
                 "dribble": _safe(row.get("dribble_definition")),
             },
         }
+        profile["canonical_player_id"] = _safe(row.get("canonical_person_id")) or profile.get(
+            "canonical_player_id"
+        )
+        return profile
 
     def profile_by_id(self, player_season_id: str) -> dict[str, Any]:
         try:
@@ -467,19 +690,48 @@ def players(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict[str, Any]:
     frame = get_service().frame
+    matched = frame
     if name:
-        frame = frame[frame["player_name"].str.contains(name, case=False, regex=False, na=False)]
-    if competition:
-        frame = frame[frame["competition_name"] == competition]
-    if season:
-        frame = frame[frame["season_name"] == season]
-    frame = frame.sort_values(["player_name", "season_name"]).head(limit)
-    return {
-        "players": [
-            {field: _safe(row.get(field)) for field in PROFILE_FIELDS}
-            for _, row in frame.iterrows()
+        matched = matched[
+            matched["player_name"].str.contains(name, case=False, regex=False, na=False)
         ]
-    }
+    if competition:
+        matched = matched[matched["competition_name"] == competition]
+    if season:
+        matched = matched[matched["season_name"] == season]
+    person_ids = matched["canonical_person_id"].dropna().drop_duplicates().head(limit)
+    frame = frame[frame["canonical_person_id"].isin(person_ids)]
+    summaries = []
+    for person_id, group in frame.groupby("canonical_person_id", sort=False):
+        names = sorted(
+            set(group["player_name"].dropna().astype(str)),
+            key=lambda value: ("\\u" in value, len(value.split()), len(value), value),
+        )
+        profiles = group.sort_values(
+            ["season_start_year", "competition_name"], ascending=[False, True]
+        )
+        profile_rows = [
+            {
+                **{field: _safe(row.get(field)) for field in PROFILE_FIELDS},
+                "canonical_player_id": person_id,
+            }
+            for _, row in profiles.iterrows()
+        ]
+        summaries.append(
+            {
+                "canonical_player_id": person_id,
+                "player_name": names[0] if names else "Unknown player",
+                "clubs": sorted(set(group["team_name"].dropna().astype(str))),
+                "competitions": sorted(
+                    set(group["competition_name"].dropna().astype(str))
+                ),
+                "season_count": int(group["season_name"].nunique()),
+                "profile_count": len(group),
+                "profiles": profile_rows,
+            }
+        )
+    summaries.sort(key=lambda item: (item["player_name"].casefold(), item["canonical_player_id"]))
+    return {"players": summaries[:limit]}
 
 
 @app.get("/player/{player_season_id}/profile")
@@ -495,7 +747,10 @@ def search_similar(request: SimilarSearchRequest, _auth: Protected) -> dict[str,
     return {
         "engine": "EXACT SCOUTPRINT",
         "authoritative": True,
-        "method": "fast all-profile prefilter then exact shortlisted Sinkhorn/cosine/JS reranking",
+        "method": (
+            "canonical self-exclusion, broad role compatibility, fast profile prefilter, "
+            "exact shortlisted Sinkhorn/cosine/JS reranking, evidence-adjusted recommendation"
+        ),
         "runtime_ms": round(runtime_ms, 1),
         "candidate_count": len(ranked),
         "results": [service.result(row, rank) for rank, (_, row) in enumerate(limited.iterrows(), 1)],
