@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import math
 import os
+import re
 import time
 from functools import lru_cache
 from pathlib import Path
@@ -39,6 +40,8 @@ PROFILE_FIELDS = [
     "appearances",
     "starts",
     "source_provider",
+    "data_tier",
+    "comparison_coverage",
 ]
 
 STAT_FIELDS = [
@@ -101,11 +104,16 @@ class SimilarSearchRequest(BaseModel):
     reference_season: str | None = None
     candidate_competitions: list[str] = Field(default_factory=list)
     candidate_seasons: list[str] = Field(default_factory=list)
+    candidate_windows: list[str] = Field(default_factory=list)
+    candidate_positions: list[str] = Field(default_factory=list)
+    data_tiers: list[str] = Field(default_factory=lambda: ["A", "B", "C"])
+    recent_candidates_only: bool = True
     minimum_minutes: float = Field(default=0, ge=0)
     minimum_age: float | None = Field(default=None, ge=10, le=60)
     maximum_age: float | None = Field(default=None, ge=10, le=60)
     mirror_mode: bool = True
     minimum_comparison_coverage: float = Field(default=0, ge=0, le=100)
+    minimum_profile_match: float = Field(default=0, ge=0, le=100)
     result_limit: int = Field(default=25, ge=1, le=100)
     exact_shortlist_size: int = Field(default=120, ge=20, le=200)
     weights: dict[str, float] = Field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
@@ -125,6 +133,8 @@ class SimilarSearchRequest(BaseModel):
             raise ValueError("Similarity weights must be between 0 and 100")
         if not any(self.weights.values()):
             raise ValueError("At least one similarity weight must be positive")
+        if set(self.data_tiers) - {"A", "B", "C"}:
+            raise ValueError("data_tiers must contain only A, B or C")
         return self
 
 
@@ -161,7 +171,22 @@ class ExactScoutprintService:
         frame = pl.read_parquet(history_path).to_pandas()
         primary = frame[frame["is_primary_profile"].fillna(False)].copy()
         self.frame = primary.reset_index(drop=True)
-        self.by_id = frame.set_index("player_season_id", drop=False)
+        self.frame["candidate_window"] = self.frame.apply(self._candidate_window, axis=1)
+        self.by_id = self.frame.set_index("player_season_id", drop=False)
+
+    @staticmethod
+    def _candidate_window(row: pd.Series) -> str | None:
+        year = row.get("season_start_year")
+        if pd.isna(year):
+            return None
+        year = int(year)
+        if row.get("source_provider") == "american_soccer_analysis":
+            return f"{year - 1}/{str(year)[-2:]}"
+        return f"{year}/{str(year + 1)[-2:]}"
+
+    @property
+    def recent_frame(self) -> pd.DataFrame:
+        return self.frame[self.frame["candidate_window"].isin({"2023/24", "2024/25", "2025/26"})]
 
     def _reference(self, request: SimilarSearchRequest) -> pd.Series:
         try:
@@ -181,13 +206,22 @@ class ExactScoutprintService:
 
     def candidate_frame(self, request: SimilarSearchRequest) -> tuple[pd.DataFrame, pd.Series]:
         reference = self._reference(request)
-        candidates = self.frame
+        candidates = self.recent_frame if request.recent_candidates_only else self.frame
         if request.candidate_competitions:
             candidates = candidates[
                 candidates["competition_name"].isin(request.candidate_competitions)
             ]
         if request.candidate_seasons:
             candidates = candidates[candidates["season_name"].isin(request.candidate_seasons)]
+        if request.candidate_windows:
+            candidates = candidates[candidates["candidate_window"].isin(request.candidate_windows)]
+        if request.candidate_positions:
+            pattern = "|".join(re.escape(position) for position in request.candidate_positions)
+            candidates = candidates[
+                candidates["positions"].str.contains(pattern, case=False, regex=True, na=False)
+            ]
+        if request.data_tiers:
+            candidates = candidates[candidates["data_tier"].isin(request.data_tiers)]
         candidates = candidates[candidates["minutes"].fillna(-1) >= request.minimum_minutes]
         if request.minimum_age is not None:
             candidates = candidates[candidates["age"].notna()]
@@ -217,6 +251,7 @@ class ExactScoutprintService:
         ranked = ranked[
             ranked["Comparable profile coverage"] >= request.minimum_comparison_coverage
         ]
+        ranked = ranked[ranked["Overall"] >= request.minimum_profile_match]
         return ranked, (time.perf_counter() - started) * 1000
 
     def result(self, row: pd.Series, rank: int) -> dict[str, Any]:
@@ -235,6 +270,8 @@ class ExactScoutprintService:
             "competition": row.get("competition_name"),
             "season": row.get("season_name"),
             "position": row.get("positions"),
+            "source_provider": row.get("source_provider"),
+            "data_tier": row.get("data_tier") or "C",
             "age": _safe(row.get("age")),
             "minutes": _safe(row.get("minutes")),
             "profile_match": _safe(row.get("Overall")),
@@ -247,6 +284,10 @@ class ExactScoutprintService:
             "xa": _safe(row.get("xa")),
             "xg_p90": _safe(row.get("xg_p90")),
             "xa_p90": _safe(row.get("xa_p90")),
+            "goals_p90": _safe(row.get("goals_p90")),
+            "assists_p90": _safe(row.get("assists_p90")),
+            "shots_p90": _safe(row.get("shots_p90")),
+            "candidate_window": row.get("candidate_window"),
             "unavailable_categories": [] if missing == "None" else missing.split(", "),
         }
 
@@ -259,7 +300,10 @@ class ExactScoutprintService:
         }
         return {
             **{field: _safe(row.get(field)) for field in PROFILE_FIELDS},
-            "grid": [int(row["grid_x"]), int(row["grid_y"])],
+            "grid": [
+                int(row["grid_x"]) if pd.notna(row.get("grid_x")) else 12,
+                int(row["grid_y"]) if pd.notna(row.get("grid_y")) else 8,
+            ],
             "maps": maps,
             "statistics": stats,
             "availability": available,
@@ -364,6 +408,53 @@ def seasons(
             }
             for _, row in grouped.iterrows()
         ]
+    }
+
+
+@app.get("/recent/catalogue")
+def recent_catalogue(_auth: Protected) -> dict[str, Any]:
+    frame = get_service().recent_frame
+    windows = (
+        frame.groupby("candidate_window", dropna=False)
+        .agg(
+            player_seasons=("player_season_id", "count"),
+            players=("canonical_player_id", "nunique"),
+        )
+        .reset_index()
+        .sort_values("candidate_window")
+    )
+    competitions = (
+        frame.groupby("competition_name", dropna=False)
+        .size()
+        .reset_index(name="player_seasons")
+        .sort_values("competition_name")
+    )
+    tiers = frame.groupby("data_tier", dropna=False).size().to_dict()
+    positions = sorted(
+        {
+            token.strip()
+            for value in frame["positions"].dropna().astype(str)
+            for token in re.split(r"[|,/;]", value)
+            if token.strip()
+        }
+    )
+    return {
+        "recent_players": int(frame["canonical_player_id"].nunique()),
+        "recent_player_seasons": len(frame),
+        "windows": [
+            {
+                "window": row["candidate_window"],
+                "player_seasons": int(row["player_seasons"]),
+                "players": int(row["players"]),
+            }
+            for _, row in windows.iterrows()
+        ],
+        "competitions": [
+            {"name": row["competition_name"], "player_seasons": int(row["player_seasons"])}
+            for _, row in competitions.iterrows()
+        ],
+        "positions": positions,
+        "tiers": {str(key): int(value) for key, value in tiers.items() if pd.notna(key)},
     }
 
 

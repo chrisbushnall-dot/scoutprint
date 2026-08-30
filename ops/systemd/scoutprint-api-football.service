@@ -1,0 +1,15 @@
+[Unit]
+Description=Scoutprint API-Football recent data collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/football-scout
+EnvironmentFile=-/root/.openclaw/workspace/football-scout/.env.providers
+Environment=FOOTBALL_SCOUT_DATA_DIR=/root/.openclaw/workspace/football-scout/data
+ExecStart=/root/.openclaw/workspace/football-scout/.venv/bin/python -m scripts.api_football_daily --request-budget 92
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -3,6 +3,7 @@ const { hasValidSession } = require("./_auth");
 const GET_ENDPOINTS = [
   /^competitions$/,
   /^seasons$/,
+  /^recent\/catalogue$/,
   /^players$/,
   /^player\/[A-Za-z0-9._:%-]+\/profile$/,
 ];
