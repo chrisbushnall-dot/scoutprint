@@ -9,6 +9,7 @@ description = "Self-hosted, provenance-first football player-season similarity r
 requires-python = ">=3.12"
 dependencies = [
   "duckdb>=1.2,<2",
+  "fastapi>=0.116,<1",
   "numpy>=2,<3",
   "pandas>=2.2,<3",
   "plotly>=6,<7",
@@ -19,13 +20,14 @@ dependencies = [
   "scikit-learn>=1.6,<2",
   "scipy>=1.15,<2",
   "streamlit>=1.43,<2",
+  "uvicorn>=0.35,<1",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3,<9", "ruff>=0.11,<1"]
+dev = ["httpx>=0.28,<1", "pytest>=8.3,<9", "ruff>=0.11,<1"]
 
 [tool.setuptools]
-packages = ["app", "database", "ingestion", "providers", "scripts", "similarity", "visualisation"]
+packages = ["app", "database", "identity", "ingestion", "providers", "scripts", "similarity", "visualisation", "vps_api"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

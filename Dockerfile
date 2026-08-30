@@ -5,11 +5,13 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY app ./app
 COPY database ./database
+COPY identity ./identity
 COPY ingestion ./ingestion
 COPY providers ./providers
 COPY scripts ./scripts
 COPY similarity ./similarity
 COPY visualisation ./visualisation
+COPY vps_api ./vps_api
 RUN pip install .
 COPY docs ./docs
 EXPOSE 8501

@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "outputDirectory": "web",
+  "functions": {
+    "api/scoutprint.js": { "maxDuration": 60 }
+  },
   "cleanUrls": false,
   "trailingSlash": false,
   "rewrites": [{ "source": "/", "destination": "/index.html" }],

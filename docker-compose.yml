@@ -12,4 +12,26 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=256m
-
+  scoutprint-api:
+    build: .
+    command: ["uvicorn", "vps_api.main:app", "--host=0.0.0.0", "--port=8511", "--workers=1"]
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      FOOTBALL_SCOUT_DB: /app/data/football_scout.duckdb
+      FOOTBALL_SCOUT_HISTORY: /app/data/private/canonical_identity/player_season_history.parquet
+    volumes:
+      - ./data:/app/data:ro
+    ports:
+      - "127.0.0.1:${FOOTBALL_SCOUT_API_PORT:-8511}:8511"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8511/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
