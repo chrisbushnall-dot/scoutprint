@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const login = require("../api/auth/login");
@@ -63,4 +65,12 @@ test("proxy allowlists the route and injects the VPS secret server-side", async 
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test("mobile results stay inside the viewport", () => {
+  const styles = fs.readFileSync(path.join(__dirname, "../web/styles.css"), "utf8");
+  assert.match(styles, /html\{[^}]*overflow-x:clip/);
+  assert.match(styles, /\.shell\{[^}]*max-width:calc\(100vw - 20px\)/);
+  assert.match(styles, /\.table-shell table\{[^}]*min-width:0[^}]*table-layout:fixed/);
+  assert.match(styles, /\.player-column\{min-width:0\}/);
 });

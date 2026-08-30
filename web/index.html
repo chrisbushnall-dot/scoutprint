@@ -59,7 +59,7 @@
 
         <section class="toolbar surface" aria-label="Results controls">
           <button id="filter-toggle" class="button ghost filter-toggle" type="button" aria-expanded="false" aria-controls="filters-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg> Filters <span id="filter-count">0</span></button>
-          <div class="view-toggle" aria-label="Result view"><button class="active" type="button" data-mode="list">List</button><button type="button" data-mode="cards">Cards</button></div>
+          <div class="view-toggle" aria-label="Result view"><button type="button" data-mode="cards">Cards</button><button class="active" type="button" data-mode="list">List</button></div>
           <label class="limit-control" for="result-limit">Show <select id="result-limit"><option>25</option><option selected>50</option><option>100</option></select></label>
           <p id="results-meta">Choose a reference and search the recent universe.</p>
         </section>
@@ -79,7 +79,7 @@
           <div id="empty-state" class="empty-state surface"><span>SCOUTPRINT</span><h2>Recent recommendations, ranked clearly.</h2><p>Search a historical reference player-season to compare it with Tier A, B and C candidates from the latest three scouting windows.</p></div>
           <div id="loading-state" class="loading-state surface" hidden><i></i><div><strong>Building the shortlist</strong><span>Fast statistical retrieval, then exact spatial reranking where compatible.</span></div></div>
           <div id="list-results" class="table-shell surface" hidden>
-            <table>
+            <table aria-label="Ranked recent player recommendations">
               <thead><tr>
                 <th><button data-sort="profile_match">REC</button></th>
                 <th class="player-column">Player</th>
