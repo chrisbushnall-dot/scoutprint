@@ -5,6 +5,7 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 import vps_api.main as api_module
+from similarity.roles import add_role_compatibility
 from vps_api.main import ExactScoutprintService, app
 
 
@@ -162,6 +163,7 @@ def test_statistical_tier_c_candidate_is_ranked_without_fake_spatial_score(monke
             "candidate_windows": ["2023/24"],
             "data_tiers": ["C"],
             "weights": {"Goal threat": 100},
+            "include_low_confidence": True,
         },
     )
     assert response.status_code == 200
@@ -181,6 +183,7 @@ def test_same_canonical_player_is_excluded_and_candidate_seasons_collapse(monkey
             "candidate_windows": ["2023/24"],
             "minimum_comparison_coverage": 0,
             "minimum_role_compatibility": 0,
+            "include_low_confidence": True,
         },
     )
     results = response.json()["results"]
@@ -214,6 +217,7 @@ def test_low_coverage_adjusts_recommendation_not_raw_similarity(monkeypatch) -> 
             "weights": {"Goal threat": 35, "Spatial role": 65},
             "minimum_comparison_coverage": 0,
             "minimum_role_compatibility": 0,
+            "include_low_confidence": True,
         },
     )
     result = response.json()["results"][0]
@@ -223,6 +227,73 @@ def test_low_coverage_adjusts_recommendation_not_raw_similarity(monkeypatch) -> 
     assert all(
         item["dimension"] != "Spatial role" for item in result["top_matching_dimensions"]
     )
+
+
+def test_low_confidence_is_excluded_by_default_but_can_be_included(monkeypatch) -> None:
+    client = _client(monkeypatch)
+    request = {
+        "reference_player_season_id": "reference",
+        "candidate_windows": ["2023/24"],
+        "data_tiers": ["C"],
+        "weights": {"Goal threat": 35, "Spatial role": 65},
+        "minimum_comparison_coverage": 0,
+        "minimum_role_compatibility": 0,
+    }
+    assert client.post(
+        "/search/similar",
+        headers={"X-Scoutprint-API-Key": "test-server-secret"},
+        json=request,
+    ).json()["results"] == []
+    request["include_low_confidence"] = True
+    results = client.post(
+        "/search/similar",
+        headers={"X-Scoutprint-API-Key": "test-server-secret"},
+        json=request,
+    ).json()["results"]
+    assert results[0]["confidence"] == "LOW"
+
+
+def test_role_compatibility_explicitly_affects_recommendation_score() -> None:
+    common = {
+        "Overall": 80.0,
+        "Comparable profile coverage": 90.0,
+        "minutes": 1_800.0,
+        "data_tier": "A",
+        "Spatial role": 80.0,
+        "Goal threat": 80.0,
+        "Shooting": 80.0,
+        "Chance creation": 80.0,
+        "Carrying": 80.0,
+        "Passing": 80.0,
+        "Defending": 80.0,
+    }
+    ranked = pd.DataFrame(
+        [{**common, "Role compatibility": 95.0}, {**common, "Role compatibility": 50.0}]
+    )
+    scored = ExactScoutprintService._add_recommendation_evidence(ranked)
+    assert scored.loc[0, "Recommendation"] > scored.loc[1, "Recommendation"]
+    assert scored.loc[0, "Overall"] == scored.loc[1, "Overall"] == 80.0
+    assert scored.loc[0, "Role recommendation factor"] > scored.loc[1, "Role recommendation factor"]
+
+
+def test_wide_scoring_reference_prefers_wide_forward_over_box_9() -> None:
+    reference = _profile("wide-reference", "Wide Reference", 8, 25, position="Forward")
+    wide = _profile("wide-candidate", "Wide Candidate", 8, 23, position="Right Winger")
+    box = _profile("box-candidate", "Box Candidate", 8, 23, position="Center Forward")
+    for profile, pct_wide, pct_central in (
+        (reference, 0.46, 0.16),
+        (wide, 0.44, 0.18),
+        (box, 0.15, 0.46),
+    ):
+        profile["pct_wide"] = pct_wide
+        profile["pct_central"] = pct_central
+        profile["chance_creation_p90"] = 1.0
+        profile["passes_p90"] = 25.0
+    scored, _ = add_role_compatibility(
+        pd.DataFrame([reference, wide, box]), "wide-reference"
+    )
+    compatibility = scored.set_index("player_season_id")["Role compatibility"]
+    assert compatibility["wide-candidate"] > compatibility["box-candidate"]
 
 
 def test_player_search_groups_profiles_by_canonical_person(monkeypatch) -> None:

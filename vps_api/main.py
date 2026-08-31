@@ -117,6 +117,7 @@ class SimilarSearchRequest(BaseModel):
     minimum_comparison_coverage: float = Field(default=40, ge=0, le=100)
     minimum_profile_match: float = Field(default=0, ge=0, le=100)
     minimum_role_compatibility: float = Field(default=42, ge=0, le=100)
+    include_low_confidence: bool = False
     unique_players: bool = True
     result_limit: int = Field(default=25, ge=1, le=100)
     exact_shortlist_size: int = Field(default=120, ge=20, le=200)
@@ -405,7 +406,13 @@ class ExactScoutprintService:
         output["Meaningful dimensions"] = meaningful
         output["Evidence quality"] = 100 * evidence
         output["Confidence factor"] = 0.55 + 0.45 * evidence
-        output["Recommendation"] = output["Overall"] * output["Confidence factor"]
+        role_quality = output["Role compatibility"].fillna(0).clip(0, 100) / 100
+        output["Role recommendation factor"] = 0.35 + 0.65 * role_quality
+        output["Recommendation"] = (
+            output["Overall"]
+            * output["Confidence factor"]
+            * output["Role recommendation factor"]
+        )
         output["Confidence label"] = np.select(
             [evidence >= 0.8, evidence >= 0.62], ["HIGH", "MEDIUM"], default="LOW"
         )
@@ -444,6 +451,8 @@ class ExactScoutprintService:
         ]
         ranked = ranked[ranked["Overall"] >= request.minimum_profile_match]
         ranked = self._add_recommendation_evidence(ranked)
+        if not request.include_low_confidence:
+            ranked = ranked[ranked["Confidence label"] != "LOW"]
         if request.unique_players:
             ranked = self._collapse_unique_players(ranked)
         ranked = ranked.sort_values(
@@ -487,6 +496,7 @@ class ExactScoutprintService:
             "profile_match": _safe(row.get("Overall")),
             "recommendation_score": _safe(row.get("Recommendation")),
             "confidence_factor": _safe(row.get("Confidence factor")),
+            "role_recommendation_factor": _safe(row.get("Role recommendation factor")),
             "confidence": row.get("Confidence label"),
             "meaningful_dimensions": _safe(row.get("Meaningful dimensions")),
             "spatial_match": _safe(row.get("Spatial role")),
@@ -748,8 +758,8 @@ def search_similar(request: SimilarSearchRequest, _auth: Protected) -> dict[str,
         "engine": "EXACT SCOUTPRINT",
         "authoritative": True,
         "method": (
-            "canonical self-exclusion, broad role compatibility, fast profile prefilter, "
-            "exact shortlisted Sinkhorn/cosine/JS reranking, evidence-adjusted recommendation"
+            "canonical self-exclusion, functional-role compatibility, fast profile prefilter, "
+            "exact shortlisted Sinkhorn/cosine/JS reranking, evidence-and-role-adjusted recommendation"
         ),
         "runtime_ms": round(runtime_ms, 1),
         "candidate_count": len(ranked),
