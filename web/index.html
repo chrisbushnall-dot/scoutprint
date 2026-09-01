@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Scoutprint private player-season scouting search.">
-  <title>Scoutprint — Scouting search</title>
+  <meta name="description" content="Scoutprint private current-football intelligence.">
+  <title>Scoutprint — Current football intelligence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -26,31 +26,248 @@
   </section>
 
   <div id="app-shell" hidden>
-    <a class="skip-link" href="#main">Skip to scouting search</a>
+    <a class="skip-link" href="#main">Skip to football intelligence</a>
     <header class="topbar">
-      <a class="brand" href="#" aria-label="Scoutprint search"><svg viewBox="0 0 40 40" aria-hidden="true"><rect x="4" y="7" width="32" height="26" rx="4"/><path d="M20 7v26M4 20h32"/><circle cx="20" cy="20" r="5"/></svg><span><strong>SCOUT</strong>PRINT</span></a>
-      <span class="product-label">SCOUTING SEARCH</span>
-      <div class="engine-status"><i></i> EXACT ENGINE</div>
+      <a class="brand" href="#radar" aria-label="Scoutprint Radar"><svg viewBox="0 0 40 40" aria-hidden="true"><rect x="4" y="7" width="32" height="26" rx="4"/><path d="M20 7v26M4 20h32"/><circle cx="20" cy="20" r="5"/></svg><span><strong>SCOUT</strong>PRINT</span></a>
+      <span class="product-label">CURRENT FOOTBALL INTELLIGENCE</span>
+      <div class="engine-status"><i></i> PRIVATE DATA LIVE</div>
       <button id="logout-button" class="button ghost small" type="button">Sign out</button>
     </header>
 
+    <nav id="primary-nav" class="primary-nav" aria-label="Primary navigation">
+      <button class="active" type="button" data-product-view="radar">Radar</button>
+      <button type="button" data-product-view="players">Players</button>
+      <button type="button" data-product-view="recruitment">Recruitment</button>
+      <button type="button" data-product-view="teams">Teams</button>
+      <button type="button" data-product-view="matches">Matches</button>
+    </nav>
+
     <main id="main" class="shell">
-      <section id="search-view">
+      <section id="radar-view" class="product-view">
+        <header class="page-head compact-head"><div><p class="kicker">WHAT IS CHANGING NOW</p><h1>Radar</h1><p>Current players ranked by transparent, role-relative evidence — not an ability or potential prediction.</p></div><div class="radar-head-actions"><button id="open-league-explorer" class="button ghost" type="button">League Explorer</button><div class="data-summary radar-summary" aria-label="Radar coverage"><div><strong id="radar-player-count">—</strong><span>players</span></div><div><strong id="radar-profile-count">—</strong><span>player-seasons</span></div></div></div></header>
+        <div id="radar-modes" class="mode-strip" aria-label="Radar modes"><button class="active" type="button" data-radar-mode="breakouts">Breakouts</button><button type="button" data-radar-mode="biggest-risers">Biggest Risers</button><button type="button" data-radar-mode="u21">U21</button><button type="button" data-radar-mode="underlying-output">Underlying &gt; Output</button><button type="button" data-radar-mode="role-changes">Role Changes</button></div>
+        <form id="radar-filters" class="radar-filters surface">
+          <div><label for="radar-season">Season</label><select id="radar-season"><option value="">All seasons</option></select></div>
+          <div><label for="radar-league">League</label><select id="radar-league"><option value="">All leagues</option></select></div>
+          <div><label for="radar-role">Role</label><select id="radar-role"><option value="">All roles</option></select></div>
+          <div><label for="radar-confidence">Confidence</label><select id="radar-confidence"><option value="">All confidence</option></select></div>
+          <div><label for="radar-age-min">Age from</label><input id="radar-age-min" type="number" min="10" max="60" placeholder="Any"></div>
+          <div><label for="radar-age-max">Age to</label><input id="radar-age-max" type="number" min="10" max="60" placeholder="Any"></div>
+          <div><label for="radar-minutes">Minimum minutes</label><input id="radar-minutes" type="number" min="0" step="90" value="900"></div>
+          <button class="button secondary" type="submit">Apply filters</button>
+        </form>
+        <section class="radar-results" aria-live="polite" aria-busy="false">
+          <div class="radar-result-head"><div><p class="kicker" id="radar-mode-kicker">BREAKOUT SCORE</p><h2 id="radar-mode-title">Breakouts</h2><p id="radar-mode-description">Emerging players ranked by current evidence, age context and supported development.</p></div><p id="radar-meta">Loading Radar…</p></div>
+          <div id="radar-loading" class="loading-state surface"><i></i><div><strong>Loading current intelligence</strong><span>Ranking the precomputed evidence.</span></div></div>
+          <div id="radar-empty" class="empty-state surface" hidden><span>RADAR</span><h2>No players match these filters.</h2><p>Try a wider season, league, age or minutes range.</p></div>
+          <div id="radar-table" class="table-shell radar-table surface" hidden>
+            <table aria-label="Radar ranked players"><thead><tr>
+              <th class="numeric"><button type="button" data-radar-sort="radar_score">Radar</button></th>
+              <th class="numeric"><button type="button" data-radar-sort="breakout_score">Breakout</button></th>
+              <th class="player-column">Player</th><th>Role</th><th>Club</th><th>League</th>
+              <th class="numeric"><button type="button" data-radar-sort="age">Age</button></th>
+              <th class="numeric"><button type="button" data-radar-sort="current_level">Current level</button></th>
+              <th class="numeric"><button type="button" data-radar-sort="development">Development</button></th>
+              <th class="numeric"><button type="button" data-radar-sort="minutes">Minutes</button></th>
+              <th class="numeric"><button type="button" data-radar-sort="xg_p90">xG/90</button></th>
+              <th class="numeric"><button type="button" data-radar-sort="xa_p90">xA/90</button></th>
+              <th>What's changed?</th><th>Confidence</th>
+            </tr></thead><tbody id="radar-body"></tbody></table>
+          </div>
+          <div id="radar-cards" class="radar-cards" hidden></div>
+        </section>
+      </section>
+
+      <section id="league-view" class="product-view" data-product-view-name="league" hidden>
+        <button id="back-radar" class="button ghost back-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg> Back to Radar</button>
+        <header class="page-head compact-head"><div><p class="kicker">RADAR → LEAGUE EXPLORER</p><h1>League-season intelligence</h1><p>Browse nine transparent leaderboards and the available behavioural-role population for one league-season.</p></div><div id="league-summary" class="data-summary league-summary" aria-label="League Explorer coverage"></div></header>
+        <form id="league-filters" class="league-filters surface">
+          <div><label for="league-league">League</label><select id="league-league" required></select></div>
+          <div><label for="league-season">Season</label><select id="league-season" required></select></div>
+          <div><label for="league-minutes">Minimum minutes</label><input id="league-minutes" type="number" min="0" step="90" value="900"></div>
+          <button id="league-load" class="button primary" type="submit">Explore league</button>
+        </form>
+        <div id="league-loading" class="loading-state surface" hidden><i></i><div><strong>Loading league intelligence</strong><span>Reading precomputed role-relative leaderboards.</span></div></div>
+        <div id="league-empty" class="empty-state surface" hidden><span>LEAGUE</span><h2>No player-seasons meet this minutes threshold.</h2><p>Lower the threshold to browse the available evidence.</p></div>
+        <section id="league-content" class="league-content" hidden>
+          <article class="role-distribution-card surface"><div class="section-title"><div><p class="kicker">BEHAVIOURAL POPULATION</p><h2>Role distribution</h2><p>Shares describe classified player-seasons in this selected evidence population; they are not squad or tactical claims.</p></div></div><div id="league-role-distribution" class="role-distribution"></div></article>
+          <div id="league-leaderboards" class="league-board-grid" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section id="players-view" class="product-view" hidden>
         <header class="page-head compact-head">
-          <div><p class="kicker">REFERENCE → RECENT DISCOVERY</p><h1>Scouting search</h1></div>
+          <div><p class="kicker">PLAYER-FIRST EXPLORATION</p><h1>Players</h1><p>Search one player at a time across the current universe, with season evidence kept visible.</p></div>
+          <div class="data-summary player-summary" aria-label="Player Explorer coverage"><div><strong id="explorer-player-count">—</strong><span>players</span></div><div><strong id="explorer-profile-count">—</strong><span>player-seasons</span></div></div>
+        </header>
+        <form id="player-filters" class="player-filters surface">
+          <div class="player-query"><label for="player-name">Player</label><input id="player-name" type="search" autocomplete="off" placeholder="Search player name"></div>
+          <div class="club-query"><label for="player-club">Club</label><input id="player-club" type="search" autocomplete="off" placeholder="Search club"></div>
+          <details id="player-advanced-filters" class="player-advanced-filters">
+            <summary>More filters <span id="player-filter-count">0</span></summary>
+            <div class="player-filter-grid">
+              <div><label for="player-league">League</label><select id="player-league"><option value="">All leagues</option></select></div>
+              <div><label for="player-season">Season</label><select id="player-season"><option value="">Latest eligible</option></select></div>
+              <div><label for="player-role">Role</label><select id="player-role"><option value="">All roles</option></select></div>
+              <div><label for="player-position">Position</label><select id="player-position"><option value="">All positions</option></select></div>
+              <div><label for="player-age-min">Age from</label><input id="player-age-min" type="number" min="10" max="60" placeholder="Any"></div>
+              <div><label for="player-age-max">Age to</label><input id="player-age-max" type="number" min="10" max="60" placeholder="Any"></div>
+              <div><label for="player-minutes">Minimum minutes</label><input id="player-minutes" type="number" min="0" step="90" value="900"></div>
+              <div><label for="player-tier">Data tier</label><select id="player-tier"><option value="">All tiers</option><option value="A">Tier A</option><option value="B">Tier B</option><option value="C">Tier C</option></select></div>
+              <div><label for="player-confidence">Confidence</label><select id="player-confidence"><option value="">All confidence</option></select></div>
+              <label class="player-season-toggle" for="player-expand-seasons"><input id="player-expand-seasons" type="checkbox"><span>Show every player-season<small>Off keeps the latest eligible season per player.</small></span></label>
+            </div>
+          </details>
+          <button id="player-search-button" class="button primary" type="submit">Search players</button>
+        </form>
+        <section class="player-results" aria-live="polite" aria-busy="false">
+          <div class="player-result-head"><div><p class="kicker">CURRENT PLAYER UNIVERSE</p><h2>Explorer results</h2></div><p id="player-meta">Open Players to load the latest eligible season per player.</p></div>
+          <div id="player-loading" class="loading-state surface" hidden><i></i><div><strong>Loading player intelligence</strong><span>Applying filters to the precomputed evidence.</span></div></div>
+          <div id="player-empty" class="empty-state surface" hidden><span>PLAYERS</span><h2>No players match these filters.</h2><p>Try a wider name, league, age or minutes range.</p></div>
+          <div id="player-table" class="table-shell player-table surface" hidden>
+            <table aria-label="Player Explorer results"><thead><tr>
+              <th class="player-column"><button type="button" data-player-sort="player_name">Player</button></th>
+              <th><button type="button" data-player-sort="role">Role</button></th><th>Club</th><th>League</th><th>Season</th>
+              <th class="numeric"><button type="button" data-player-sort="age">Age</button></th><th class="numeric"><button type="button" data-player-sort="minutes">Minutes</button></th>
+              <th class="numeric"><button type="button" data-player-sort="current_level">Current level</button></th><th class="numeric"><button type="button" data-player-sort="development">Development</button></th>
+              <th class="numeric"><button type="button" data-player-sort="radar_score">Radar</button></th><th class="numeric"><button type="button" data-player-sort="xg_p90">xG/90</button></th><th class="numeric"><button type="button" data-player-sort="xa_p90">xA/90</button></th>
+              <th><button type="button" data-player-sort="data_tier">Tier</button></th><th><button type="button" data-player-sort="confidence">Confidence</button></th>
+            </tr></thead><tbody id="player-body"></tbody></table>
+          </div>
+          <div id="player-cards" class="player-cards" hidden></div>
+          <nav id="player-pagination" class="player-pagination" aria-label="Player result pages" hidden><button id="player-previous" class="button ghost" type="button">Previous</button><span id="player-page-meta"></span><button id="player-next" class="button ghost" type="button">Next</button></nav>
+        </section>
+      </section>
+      <section id="player-dossier-view" hidden>
+        <button id="back-players" class="button ghost back-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg> Back to players</button>
+        <div id="dossier-loading" class="loading-state surface"><i></i><div><strong>Loading player dossier</strong><span>Retrieving derived role, Current Level and development evidence.</span></div></div>
+        <div id="dossier-content" hidden>
+          <header class="dossier-head surface">
+            <div><p class="kicker">PLAYER DOSSIER · OVERVIEW</p><h1 id="dossier-name"></h1><p id="dossier-context"></p></div>
+            <div id="dossier-scores" class="detail-scores" aria-label="Player overview scores"></div>
+          </header>
+          <nav class="dossier-tabs" aria-label="Dossier sections"><button class="active" type="button" data-dossier-tab="overview">Overview</button><button type="button" data-dossier-tab="development">Development</button><button type="button" data-dossier-tab="spatial">Spatial</button><button type="button" data-dossier-tab="shooting">Shooting</button><button type="button" data-dossier-tab="creation">Creation</button><span>Progression</span><span>Passing</span><span>Defending</span><span>Role</span><span>Similar Players</span><span>Data</span></nav>
+          <div id="dossier-overview-panel" data-dossier-panel="overview">
+            <section class="dossier-overview-grid">
+              <article class="dossier-card surface"><p class="kicker">SEASON SNAPSHOT</p><h2>Overview</h2><dl id="dossier-facts" class="dossier-facts"></dl><p id="dossier-confidence-note" class="evidence-note"></p></article>
+              <article class="dossier-card surface"><p class="kicker">BEHAVIOURAL CLASSIFICATION</p><h2 id="dossier-role"></h2><p id="dossier-role-context" class="dossier-card-copy"></p><div id="dossier-role-evidence" class="evidence-list"></div></article>
+            </section>
+            <section class="current-level-section surface">
+              <div class="section-title"><div><p class="kicker">ROLE-RELATIVE PRESENT SEASON</p><h2>Current Level components</h2><p>Percentiles compare this player with the same behavioural role and season. This is evidence context, not an ability or potential rating.</p></div><strong id="dossier-current-level" class="current-level-score"></strong></div>
+              <div id="dossier-current-components" class="component-grid"></div>
+              <div id="dossier-current-adjustments" class="current-adjustments"></div>
+            </section>
+          </div>
+          <section id="dossier-development-panel" class="development-panel" data-dossier-panel="development" hidden>
+            <article class="development-history surface"><div class="section-title"><div><p class="kicker">COMPARABLE SEASON HISTORY</p><h2>Player Development</h2><p>Current Level movement is shown only between consecutive seasons in a comparable behavioural role group. Missing history is unavailable, never zero.</p></div><strong id="dossier-development-score" class="current-level-score"></strong></div><div id="dossier-development-summary"></div><div id="dossier-development-history" class="development-timeline"></div></article>
+            <article class="dossier-card surface"><p class="kicker">ROLE EVOLUTION</p><h2>Behavioural role history</h2><p class="dossier-card-copy">Season classifications use available behaviour; provider position remains supporting evidence only.</p><div id="dossier-role-evolution" class="role-evolution"></div></article>
+          </section>
+          <section id="dossier-spatial-panel" class="dossier-evidence-panel" data-dossier-panel="spatial" hidden>
+            <article class="dossier-map-card surface"><div class="section-title"><div><p class="kicker">DERIVED LOCATION EVIDENCE</p><h2>Spatial occupation</h2><p id="dossier-spatial-note"></p></div></div><div id="dossier-spatial-map-wrap" class="dossier-map-wrap"><canvas id="dossier-spatial-map" aria-label="Player action-location heatmap"></canvas></div><div id="dossier-spatial-empty" class="safe-empty" hidden>Spatial evidence is unavailable for this player-season; no heatmap is inferred.</div></article>
+            <article class="dossier-card surface"><p class="kicker">SUPPORTED DISTRIBUTION</p><h2>Location dimensions</h2><p class="dossier-card-copy">Shares describe recorded action locations, not continuous tracking or off-ball position.</p><div id="dossier-spatial-metrics" class="evidence-metric-grid"></div></article>
+          </section>
+          <section id="dossier-shooting-panel" class="dossier-evidence-panel" data-dossier-panel="shooting" hidden>
+            <article class="dossier-map-card surface"><div class="section-title"><div><p class="kicker">SHOT LOCATION EVIDENCE</p><h2>Shooting</h2><p id="dossier-shooting-note"></p></div></div><div id="dossier-shooting-maps" class="dossier-map-pair"><div><span>Shots</span><canvas id="dossier-shot-map" aria-label="Shot-location heatmap"></canvas></div><div id="dossier-goal-map-card"><span>Goals</span><canvas id="dossier-goal-map" aria-label="Goal-location heatmap"></canvas></div></div><div id="dossier-shooting-map-empty" class="safe-empty" hidden>Shot locations are unavailable; supported aggregate shooting metrics remain visible.</div></article>
+            <article class="dossier-card surface"><p class="kicker">OUTPUT AND UNDERLYING</p><h2>Supported shooting metrics</h2><p id="dossier-shooting-label" class="dossier-card-copy"></p><div id="dossier-shooting-metrics" class="evidence-metric-grid"></div></article>
+          </section>
+          <section id="dossier-creation-panel" class="dossier-evidence-panel" data-dossier-panel="creation" hidden>
+            <article class="dossier-map-card surface"><div class="section-title"><div><p class="kicker">CREATION LOCATION EVIDENCE</p><h2>Chance creation</h2><p id="dossier-creation-note"></p></div></div><div id="dossier-creation-map-wrap" class="dossier-map-wrap"><canvas id="dossier-creation-map" aria-label="Chance-creation location heatmap"></canvas></div><div id="dossier-creation-map-empty" class="safe-empty" hidden>Creation locations are unavailable; supported aggregate creation metrics remain visible.</div></article>
+            <article class="dossier-card surface"><p class="kicker">CHANCE OUTPUT</p><h2>Supported creation metrics</h2><p class="dossier-card-copy">xA and chance creation are shown only where the source definition is available.</p><div id="dossier-creation-metrics" class="evidence-metric-grid"></div></article>
+          </section>
+        </div>
+      </section>
+      <section id="teams-view" class="product-view" hidden>
+        <header class="page-head compact-head"><div><p class="kicker">SUPPORTED TEAM EVIDENCE</p><h1>Teams</h1><p>Browse one evidence-backed club-season without inferring tactics, squad quality or match performance.</p></div><div id="team-summary" class="data-summary team-summary" aria-label="Team evidence coverage"></div></header>
+        <form id="team-filters" class="team-filters surface">
+          <div><label for="team-league">League</label><select id="team-league" required></select></div>
+          <div><label for="team-season">Season</label><select id="team-season" required></select></div>
+          <div><label for="team-team">Team</label><select id="team-team" required></select></div>
+          <div><label for="team-minutes">Minimum player minutes</label><input id="team-minutes" type="number" min="0" step="90" value="0"></div>
+          <button id="team-load" class="button primary" type="submit">Explore team</button>
+        </form>
+        <div id="team-loading" class="loading-state surface" hidden><i></i><div><strong>Loading team evidence</strong><span>Reading precomputed player-season intelligence.</span></div></div>
+        <div id="team-empty" class="empty-state surface" hidden><span>TEAM</span><h2>No player-seasons meet this minutes threshold.</h2><p>Lower the threshold to browse the supported roster evidence.</p></div>
+        <section id="team-content" class="team-content" hidden>
+          <article class="team-board surface"><div class="section-title"><div><p class="kicker">CURRENT LEVEL</p><h2>Key players by current evidence</h2><p>Role-relative present-season evidence, not importance, ability or transfer value.</p></div></div><div id="team-key-players" class="team-player-list"></div></article>
+          <article class="team-board surface"><div class="section-title"><div><p class="kicker">BREAKOUT SCORE</p><h2>Breakouts</h2><p>Transparent age, development and present-evidence ranking; not a potential prediction.</p></div></div><div id="team-breakouts" class="team-player-list"></div></article>
+          <article class="team-depth-card surface"><div class="section-title"><div><p class="kicker">RECORDED USAGE</p><h2>Behavioural role depth</h2><p>Options are ordered by recorded minutes. This does not identify a tactical hierarchy or recruitment need.</p></div></div><div id="team-role-depth" class="team-role-depth"></div></article>
+          <article class="team-limitations surface"><p class="kicker">EVIDENCE BOUNDARY</p><h2>Unavailable here</h2><ul id="team-unavailable"></ul></article>
+        </section>
+      </section>
+      <section id="matches-view" class="product-view" hidden>
+        <header class="page-head compact-head"><div><p class="kicker">PITCHAPI MATCH EVIDENCE</p><h1>Matches</h1><p>Browse completed matches by league, date or team, then inspect only the evidence the provider supports.</p></div><div id="match-summary" class="data-summary match-summary"></div></header>
+        <form id="match-filters" class="match-filters surface">
+          <div><label for="match-league">League</label><select id="match-league"><option value="">All supported leagues</option></select></div>
+          <div><label for="match-date-from">From</label><input id="match-date-from" type="date"></div>
+          <div><label for="match-date-to">To</label><input id="match-date-to" type="date"></div>
+          <div><label for="match-team">Team</label><input id="match-team" type="search" placeholder="Search team"></div>
+          <button id="match-load" class="button primary" type="submit">Browse matches</button>
+        </form>
+        <div id="match-loading" class="loading-state surface" hidden><i></i><div><strong>Loading match evidence</strong><span>Reading completed private provider caches.</span></div></div>
+        <div id="match-empty" class="empty-state surface" hidden><span>MATCHES</span><h2>No supported matches meet these filters.</h2><p>Widen the date range, league or team search.</p></div>
+        <div id="match-list" class="match-list" aria-live="polite"></div>
+        <section id="match-detail" class="match-detail" hidden>
+          <button id="back-matches" class="button ghost back-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg> Back to matches</button>
+          <header class="match-score surface"><div><p id="match-detail-context" class="kicker"></p><h2 id="match-detail-title"></h2><p id="match-detail-ground"></p></div><strong id="match-detail-score"></strong></header>
+          <div id="match-evidence-grid" class="match-evidence-grid">
+            <article class="match-panel surface"><p class="kicker">SHOT QUALITY</p><h2>Shots and xG</h2><div id="match-shot-summary" class="match-shot-summary"></div><canvas id="match-shot-map" aria-label="Recorded match shot map"></canvas><div id="match-shot-sequence" class="match-shot-sequence"></div></article>
+            <article class="match-panel surface"><p class="kicker">TOP PLAYER EVIDENCE</p><h2>Top performers</h2><p class="panel-note">Ordered by the provider match rating where available.</p><div id="match-performers" class="match-performers"></div></article>
+            <article class="match-panel match-lineups surface"><p class="kicker">RECORDED SELECTION</p><h2>Lineups and minutes</h2><div id="match-lineup-grid" class="match-lineup-grid"></div></article>
+            <article class="match-panel match-player-panel surface"><p class="kicker">SUPPORTED MATCH STATS</p><h2>Player statistics</h2><div id="match-player-stats" class="table-shell"></div></article>
+            <article class="match-panel match-network-panel surface"><p class="kicker">PROVIDER WINDOW</p><h2>Pass-network positions</h2><p class="panel-note">Average recorded network positions and pass involvement; not a tactical formation claim.</p><div id="match-networks" class="match-networks"></div></article>
+            <article class="match-panel match-limitations surface"><p class="kicker">EVIDENCE BOUNDARY</p><h2>Interpretation limits</h2><ul id="match-limitations"></ul></article>
+          </div>
+        </section>
+      </section>
+
+      <section id="search-view" class="product-view" data-product-view-name="recruitment" hidden>
+        <nav class="mode-strip recruitment-tabs" aria-label="Recruitment tools"><button class="active" type="button" data-recruitment-tool="roles">Role Search</button><button type="button" data-recruitment-tool="replacement">Replacement Finder</button></nav>
+        <div id="role-search-panel">
+          <header class="page-head compact-head">
+            <div><p class="kicker">RECRUITMENT → ROLE SEARCH</p><h1>Role Search</h1><p>Build a role-led candidate list from current behavioural evidence. Role Fit describes classification strength, not transfer suitability.</p></div>
+            <div class="data-summary recruitment-summary" aria-label="Role Search coverage"><div><strong id="recruitment-player-count">—</strong><span>players</span></div><div><strong id="recruitment-profile-count">—</strong><span>player-seasons</span></div></div>
+          </header>
+          <form id="recruitment-filters" class="recruitment-filters surface">
+            <div><label for="recruitment-role">Behavioural role</label><select id="recruitment-role" required></select></div>
+            <div><label for="recruitment-league">League</label><select id="recruitment-league"><option value="">All leagues</option></select></div>
+            <div><label for="recruitment-season">Season</label><select id="recruitment-season"><option value="">Latest eligible</option></select></div>
+            <div><label for="recruitment-age-min">Age from</label><input id="recruitment-age-min" type="number" min="10" max="60" placeholder="Any"></div>
+            <div><label for="recruitment-age-max">Age to</label><input id="recruitment-age-max" type="number" min="10" max="60" placeholder="Any"></div>
+            <div><label for="recruitment-minutes">Minimum minutes</label><input id="recruitment-minutes" type="number" min="0" step="90" value="900"></div>
+            <button id="recruitment-search-button" class="button primary" type="submit">Find candidates</button>
+          </form>
+          <section class="recruitment-results" aria-live="polite" aria-busy="false">
+            <div class="player-result-head"><div><p class="kicker">ROLE-LED SHORTLIST</p><h2>Recruitment candidates</h2></div><p id="recruitment-meta">Choose a role to build the shortlist.</p></div>
+            <div id="recruitment-loading" class="loading-state surface" hidden><i></i><div><strong>Loading role candidates</strong><span>Ranking the precomputed behavioural evidence.</span></div></div>
+            <div id="recruitment-empty" class="empty-state surface" hidden><span>ROLE SEARCH</span><h2>No candidates match these filters.</h2><p>Try a wider league, season, age or minutes range.</p></div>
+            <div id="recruitment-table" class="table-shell recruitment-table surface" hidden>
+              <table aria-label="Role Search candidates"><thead><tr>
+                <th class="player-column">Player</th><th>Club</th><th>League</th><th>Season</th>
+                <th class="numeric"><button type="button" data-recruitment-sort="age">Age</button></th><th class="numeric"><button type="button" data-recruitment-sort="minutes">Minutes</button></th>
+                <th class="numeric"><button type="button" data-recruitment-sort="current_level">Current level</button></th><th class="numeric"><button type="button" data-recruitment-sort="development">Development</button></th>
+                <th class="numeric"><button type="button" data-recruitment-sort="role_fit">Role Fit</button></th><th>Why this role?</th><th>Confidence</th>
+              </tr></thead><tbody id="recruitment-body"></tbody></table>
+            </div>
+            <div id="recruitment-cards" class="recruitment-cards" hidden></div>
+            <nav id="recruitment-pagination" class="player-pagination" aria-label="Role Search result pages" hidden><button id="recruitment-previous" class="button ghost" type="button">Previous</button><span id="recruitment-page-meta"></span><button id="recruitment-next" class="button ghost" type="button">Next</button></nav>
+          </section>
+        </div>
+        <div id="replacement-search-panel" hidden>
+        <header class="page-head compact-head">
+          <div><p class="kicker">RECRUITMENT → REPLACEMENT FINDER</p><h1>Replacement Finder</h1><p>Select a current player-season, then rank distinct candidates by role compatibility, profile similarity, exact spatial evidence where available, and comparison coverage.</p></div>
           <div class="data-summary" aria-label="Recent searchable coverage"><div><strong id="player-count">—</strong><span>players</span></div><div><strong id="profile-count">—</strong><span>player-seasons</span></div><div><strong id="window-count">—</strong><span>recent windows</span></div></div>
         </header>
 
         <form id="search-form" class="search-panel surface">
           <div class="reference-field">
-            <label for="reference-search">Reference player</label>
+            <label for="reference-search">Current player</label>
             <div class="autocomplete">
               <input id="reference-search" type="search" value="Mohamed Salah" autocomplete="off" aria-autocomplete="list" aria-controls="reference-options" aria-expanded="false" placeholder="Type a player name">
               <div id="reference-options" class="autocomplete-menu" role="listbox" hidden></div>
             </div>
           </div>
-          <div><label for="reference-season">Reference season</label><select id="reference-season"></select></div>
-          <div><label for="reference-competition">Reference league</label><select id="reference-competition"></select></div>
+          <div><label for="reference-season">Current season</label><select id="reference-season"></select></div>
+          <div><label for="reference-competition">Current league</label><select id="reference-competition"></select></div>
           <div><label for="min-minutes">Minimum minutes</label><input id="min-minutes" type="number" min="0" step="90" value="900"></div>
           <label class="switch-field" for="mirror-mode"><span>Mirror role<small>Opposite flank</small></span><input id="mirror-mode" type="checkbox" checked><i></i></label>
           <button id="search-button" class="button primary search-button" type="submit"><span>Search</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
@@ -61,7 +278,7 @@
           <button id="filter-toggle" class="button ghost filter-toggle" type="button" aria-expanded="false" aria-controls="filters-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg> Filters <span id="filter-count">0</span></button>
           <div class="view-toggle" aria-label="Result view"><button type="button" data-mode="cards">Cards</button><button class="active" type="button" data-mode="list">List</button></div>
           <label class="limit-control" for="result-limit">Show <select id="result-limit"><option>25</option><option selected>50</option><option>100</option></select></label>
-          <p id="results-meta">Choose a reference and search the recent universe.</p>
+          <p id="results-meta">Choose a current player-season and search the recent universe.</p>
         </section>
 
         <section id="filters-panel" class="filters-panel surface" hidden>
@@ -77,7 +294,7 @@
         </section>
 
         <section id="results-section" class="results-section" aria-live="polite">
-          <div id="empty-state" class="empty-state surface"><span>SCOUTPRINT</span><h2>Recent recommendations, ranked clearly.</h2><p>Search a historical reference player-season to compare it with Tier A, B and C candidates from the latest three scouting windows.</p></div>
+          <div id="empty-state" class="empty-state surface"><span>REPLACEMENT FINDER</span><h2>Evidence-led replacement candidates.</h2><p>Compare a current player-season with distinct Tier A, B and C candidates from the latest three scouting windows. Scores describe profile fit, not transfer suitability.</p></div>
           <div id="loading-state" class="loading-state surface" hidden><i></i><div><strong>Building the shortlist</strong><span>Fast statistical retrieval, then exact spatial reranking where compatible.</span></div></div>
           <div id="list-results" class="table-shell surface" hidden>
             <table aria-label="Ranked recent player recommendations">
@@ -95,6 +312,7 @@
           </div>
           <div id="card-results" class="card-results" hidden></div>
         </section>
+        </div>
       </section>
 
       <section id="detail-view" hidden>
@@ -104,7 +322,7 @@
           <header class="detail-head surface"><div><p class="kicker">PLAYER COMPARISON</p><h1 id="detail-title"></h1><p id="detail-context"></p></div><div id="detail-scores" class="detail-scores"></div></header>
           <div id="tier-notice" class="tier-notice" hidden>Spatial comparison unavailable for this player-season. The statistical comparison remains active.</div>
           <section class="versus-grid"><article id="reference-card" class="profile-card surface"></article><article id="candidate-card" class="profile-card surface"></article></section>
-          <section class="explanation-section surface"><div class="section-title"><div><p class="kicker">CALCULATED EXPLANATION</p><h2>Why they match</h2><p id="role-summary"></p></div></div><div class="explanation-grid"><article><h3>Top matching dimensions</h3><div id="why-match"></div></article><article><h3>Where they differ</h3><div id="where-differ"></div></article></div></section>
+          <section class="explanation-section surface"><div class="section-title"><div><p class="kicker">CALCULATED EXPLANATION</p><h2>Why they fit</h2><p id="role-summary"></p></div></div><div class="explanation-grid"><article><h3>Why they fit</h3><div id="why-match"></div></article><article><h3>Where they differ</h3><div id="where-differ"></div></article></div></section>
           <section id="maps-section" class="maps-section"><div class="section-title"><div><p class="kicker">SPATIAL EVIDENCE</p><h2>Where the profiles differ</h2></div><div id="map-tabs" class="map-tabs"></div></div><div class="map-grid"><article class="map-card surface"><h3 id="map-a-name"></h3><canvas id="map-a"></canvas></article><article class="map-card surface"><h3 id="map-b-name"></h3><canvas id="map-b"></canvas></article><article class="map-card surface"><h3>Candidate − reference</h3><canvas id="map-diff"></canvas></article></div></section>
           <section class="statistics-section surface"><div><p class="kicker">COMPARABLE STATISTICS</p><h2>Reference vs candidate</h2></div><div id="metric-comparison" class="metric-comparison"></div></section>
         </div>

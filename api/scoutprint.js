@@ -4,8 +4,16 @@ const GET_ENDPOINTS = [
   /^competitions$/,
   /^seasons$/,
   /^recent\/catalogue$/,
+  /^intelligence\/catalogue$/,
+  /^radar$/,
+  /^league$/,
+  /^team$/,
+  /^matches$/,
+  /^matches\/[A-Za-z0-9_-]+$/,
   /^players$/,
+  /^recruitment\/roles$/,
   /^player\/[A-Za-z0-9._:%-]+\/profile$/,
+  /^player\/[A-Za-z0-9._:%-]+\/intelligence$/,
 ];
 const POST_ENDPOINTS = [/^search\/similar$/, /^comparison$/];
 
