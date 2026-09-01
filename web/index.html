@@ -139,15 +139,22 @@
         </section>
       </section>
       <section id="player-dossier-view" hidden>
-        <button id="back-players" class="button ghost back-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg> Back to players</button>
+        <button id="back-players" class="button ghost back-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg> <span id="dossier-back-label">Back</span></button>
         <div id="dossier-loading" class="loading-state surface"><i></i><div><strong>Loading player dossier</strong><span>Retrieving derived role, Current Level and development evidence.</span></div></div>
         <div id="dossier-content" hidden>
           <header class="dossier-head surface">
-            <div><p class="kicker">PLAYER DOSSIER · OVERVIEW</p><h1 id="dossier-name"></h1><p id="dossier-context"></p></div>
+            <div class="dossier-identity">
+              <div id="dossier-avatar" class="dossier-avatar" aria-hidden="true"></div>
+              <div><p class="kicker">SCOUTPRINT · PLAYER SCOUT REPORT</p><h1 id="dossier-name"></h1><p id="dossier-context"></p><div id="dossier-identity-tags" class="dossier-identity-tags"></div></div>
+            </div>
             <div id="dossier-scores" class="detail-scores" aria-label="Player overview scores"></div>
           </header>
           <nav class="dossier-tabs" aria-label="Dossier sections"><button class="active" type="button" data-dossier-tab="overview">Overview</button><button type="button" data-dossier-tab="development">Development</button><button type="button" data-dossier-tab="spatial">Spatial</button><button type="button" data-dossier-tab="shooting">Shooting</button><button type="button" data-dossier-tab="creation">Creation</button><span>Progression</span><span>Passing</span><span>Defending</span><span>Role</span><span>Similar Players</span><span>Data</span></nav>
           <div id="dossier-overview-panel" data-dossier-panel="overview">
+            <section class="scout-report-summary surface">
+              <article><p class="kicker">EVIDENCE-LED SUMMARY</p><h2>Scout report</h2><div id="dossier-report-copy" class="dossier-report-copy"></div><p class="report-boundary">Automatically composed from the displayed season evidence. It describes recorded output and behaviour; it is not a prediction or transfer recommendation.</p></article>
+              <aside><div class="section-title"><div><p class="kicker">ROLE-RELATIVE PROFILE</p><h2>Performance profile</h2></div><strong id="dossier-profile-score" class="current-level-score"></strong></div><div id="dossier-profile-bars" class="report-profile-bars"></div></aside>
+            </section>
             <section class="dossier-overview-grid">
               <article class="dossier-card surface"><p class="kicker">SEASON SNAPSHOT</p><h2>Overview</h2><dl id="dossier-facts" class="dossier-facts"></dl><p id="dossier-confidence-note" class="evidence-note"></p></article>
               <article class="dossier-card surface"><p class="kicker">BEHAVIOURAL CLASSIFICATION</p><h2 id="dossier-role"></h2><p id="dossier-role-context" class="dossier-card-copy"></p><div id="dossier-role-evidence" class="evidence-list"></div></article>
