@@ -117,7 +117,7 @@ async function unlock(){
 
 const radarModeCopy={
   "breakouts":["BREAKOUT SCORE","Breakouts","Emerging players ranked by current evidence, age context and supported development."],
-  "biggest-risers":["DEVELOPMENT","Biggest Risers","Positive comparable season-on-season Current Level movement."],
+  "biggest-risers":["DEVELOPMENT","Biggest Risers","Positive like-for-like role-performance movement across two consecutive 900+ minute samples."],
   "u21":["AGE CONTEXT","U21","Players aged 21 or younger ranked by transparent Radar evidence."],
   "underlying-output":["PRODUCTION GAP","Underlying > Output","Supported xG and xA evidence running ahead of recorded goals and assists."],
   "role-changes":["ROLE EVOLUTION","Role Changes","Material behaviour-led role changes between comparable seasons."]
@@ -313,11 +313,12 @@ function renderDevelopment(player){
   const history=Array.isArray(player.history)?player.history:[],comparable=history.filter(item=>item.development!=null);
   $("#dossier-development-score").textContent=player.development==null?"—":signedValue(player.development,1);
   if(player.development==null){
-    $("#dossier-development-summary").innerHTML='<p class="safe-empty">Comparable consecutive-season Development is unavailable for this player-season.</p>';
+    const reason=player.development_context?.reason||"Comparable consecutive-season Development is unavailable for this player-season.";
+    $("#dossier-development-summary").innerHTML=`<p class="safe-empty">${escapeHtml(reason)}</p>`;
   }else{
     const context=player.development_context||{},changes=Array.isArray(context.biggest_metric_changes)?context.biggest_metric_changes:[];
     const transition=[context.team_change&&player.previous_club?`${player.previous_club} → ${player.club||"current club"}`:"",context.league_change&&player.previous_league?`${player.previous_league} → ${player.competition||"current league"}`:""].filter(Boolean);
-    $("#dossier-development-summary").innerHTML=`<div class="development-summary"><div><span>Previous Current Level</span><strong>${value(player.previous_current_level,1)}</strong></div><div><span>Current Level movement</span><strong class="${Number(player.development)>0?"positive":""}">${signedValue(player.development,1)}</strong></div><div><span>Comparable transitions</span><strong>${integer.format(comparable.length)}</strong></div></div>${changes.length?`<div class="metric-change-list">${changes.map(item=>`<span>${escapeHtml(item.metric)} <strong class="${Number(item.change)>0?"positive":""}">${signedValue(item.change,item.metric==="Minutes"?0:2)}</strong></span>`).join("")}</div>`:""}${transition.length?`<p class="development-transition">${escapeHtml(transition.join(" · "))}</p>`:""}`;
+    $("#dossier-development-summary").innerHTML=`<div class="development-summary"><div><span>Previous performance</span><strong>${value(context.previous_performance_percentile,1)}</strong></div><div><span>Adjusted movement</span><strong class="${Number(player.development)>0?"positive":""}">${signedValue(player.development,1)}</strong></div><div><span>Comparable transitions</span><strong>${integer.format(comparable.length)}</strong></div></div>${changes.length?`<div class="metric-change-list">${changes.map(item=>`<span>${escapeHtml(item.metric)} <strong class="${Number(item.change)>0?"positive":""}">${signedValue(item.change,item.metric==="Minutes"?0:2)}</strong></span>`).join("")}</div>`:""}<p class="development-transition">Like-for-like role metrics only · both seasons require 900+ minutes · movement is adjusted by the weaker sample${transition.length?` · ${escapeHtml(transition.join(" · "))}`:""}</p>`;
   }
   $("#dossier-development-history").innerHTML=history.length?history.map(item=>`<article class="development-season${item.player_season_id===player.player_season_id?" current":""}"><header><div><strong>${escapeHtml(item.season||item.candidate_window||"Season unavailable")}</strong><span>${escapeHtml(item.club||"Club unavailable")} · ${escapeHtml(item.competition||"League unavailable")}</span></div><span class="role-chip">${escapeHtml(item.primary_role||"Unclassified")}</span></header><dl><div><dt>Current Level</dt><dd>${value(item.current_level,1)}</dd></div><div><dt>Development</dt><dd class="${Number(item.development)>0?"positive":""}">${item.development==null?"Unavailable":signedValue(item.development,1)}</dd></div><div><dt>Minutes</dt><dd>${item.minutes==null?"Unavailable":integer.format(item.minutes)}</dd></div><div><dt>Confidence</dt><dd>${escapeHtml(item.confidence||"LOW")}</dd></div></dl></article>`).join(""):'<p class="safe-empty">No season history is available for this player.</p>';
   const transitions=history.filter(item=>item.role_changed&&item.previous_role);
