@@ -47,10 +47,10 @@
 
     <main id="main" class="shell">
       <section id="radar-view" class="product-view">
-        <header class="page-head compact-head"><div><p class="kicker">WHAT IS CHANGING NOW</p><h1>Radar</h1><p>Current players ranked by transparent, role-relative evidence — not an ability or potential prediction.</p></div><div class="radar-head-actions"><button id="open-league-explorer" class="button ghost" type="button">League Explorer</button><div class="data-summary radar-summary" aria-label="Radar coverage"><div><strong id="radar-player-count">—</strong><span>players</span></div><div><strong id="radar-profile-count">—</strong><span>player-seasons</span></div></div></div></header>
+        <header class="page-head compact-head"><div><p class="kicker">WHAT IS CHANGING NOW</p><h1>Radar</h1><p>Current players ranked from collective evidence across the latest three normalized seasons — click a result to open its current player-season dossier.</p></div><div class="radar-head-actions"><button id="open-league-explorer" class="button ghost" type="button">League Explorer</button><div class="data-summary radar-summary" aria-label="Radar coverage"><div><strong id="radar-player-count">—</strong><span>players</span></div><div><strong id="radar-profile-count">—</strong><span>player-seasons</span></div></div></div></header>
         <div id="radar-modes" class="mode-strip" aria-label="Radar modes"><button class="active" type="button" data-radar-mode="breakouts">Breakouts</button><button type="button" data-radar-mode="biggest-risers">Biggest Risers</button><button type="button" data-radar-mode="u21">U21</button><button type="button" data-radar-mode="underlying-output">Underlying &gt; Output</button><button type="button" data-radar-mode="role-changes">Role Changes</button></div>
         <form id="radar-filters" class="radar-filters surface">
-          <div><label for="radar-season">Season</label><select id="radar-season"><option value="">All seasons</option></select></div>
+          <div><label for="radar-season">Season</label><select id="radar-season"><option value="">Current 3-season view</option></select></div>
           <div><label for="radar-league">League</label><select id="radar-league"><option value="">All leagues</option></select></div>
           <div><label for="radar-role">Role</label><select id="radar-role"><option value="">All roles</option></select></div>
           <div><label for="radar-confidence">Confidence</label><select id="radar-confidence"><option value="">All confidence</option></select></div>
@@ -60,7 +60,7 @@
           <button class="button secondary" type="submit">Apply filters</button>
         </form>
         <section class="radar-results" aria-live="polite" aria-busy="false">
-          <div class="radar-result-head"><div><p class="kicker" id="radar-mode-kicker">BREAKOUT SCORE</p><h2 id="radar-mode-title">Breakouts</h2><p id="radar-mode-description">Emerging players ranked by current evidence, age context and supported development.</p></div><p id="radar-meta">Loading Radar…</p></div>
+          <div class="radar-result-head"><div><p class="kicker" id="radar-mode-kicker">RADAR INTEREST</p><h2 id="radar-mode-title">Breakouts</h2><p id="radar-mode-description">Collective current-player evidence across the latest three normalized seasons, weighted 50/30/20 by recency.</p></div><p id="radar-meta">Loading Radar…</p></div>
           <div id="radar-loading" class="loading-state surface"><i></i><div><strong>Loading current intelligence</strong><span>Ranking the precomputed evidence.</span></div></div>
           <div id="radar-empty" class="empty-state surface" hidden><span>RADAR</span><h2>No players match these filters.</h2><p>Try a wider season, league, age or minutes range.</p></div>
           <div id="radar-table" class="table-shell radar-table surface" hidden>

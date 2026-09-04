@@ -76,8 +76,8 @@ def test_behaviour_leads_role_and_scores_remain_transparent():
     assert set(components) == {
         "current_level",
         "development_velocity",
-        "age_context",
-        "role_underlying_output",
+        "age_bonus",
+        "underlying_performance",
         "minutes_reliability",
         "data_confidence",
     }
@@ -87,8 +87,12 @@ def test_behaviour_leads_role_and_scores_remain_transparent():
 def test_development_needs_consecutive_comparable_seasons_and_missing_spatial_is_safe():
     metrics = {
         "passes_p90": 30.0,
+        "receipts_p90": 28.0,
         "progressions_p90": 4.0,
+        "carries_p90": 3.0,
+        "dribbles_p90": 1.0,
         "defensive_actions_p90": 3.0,
+        "pressures_p90": 5.0,
     }
     rows = [
         profile("riser", 2023, position="Midfield", metrics=metrics),
@@ -162,25 +166,49 @@ def test_development_uses_underlying_performance_and_weaker_sample_reliability()
             "riser",
             2023,
             position="Midfield",
-            metrics={"passes_p90": 30.0, "progressions_p90": 4.0},
+            metrics={
+                "passes_p90": 30.0,
+                "receipts_p90": 28.0,
+                "progressions_p90": 4.0,
+                "carries_p90": 3.0,
+                "dribbles_p90": 1.0,
+            },
         ),
         profile(
             "riser",
             2024,
             position="Midfield",
-            metrics={"passes_p90": 60.0, "progressions_p90": 8.0},
+            metrics={
+                "passes_p90": 60.0,
+                "receipts_p90": 50.0,
+                "progressions_p90": 8.0,
+                "carries_p90": 6.0,
+                "dribbles_p90": 2.0,
+            },
         ),
         profile(
             "peer",
             2023,
             position="Midfield",
-            metrics={"passes_p90": 60.0, "progressions_p90": 8.0},
+            metrics={
+                "passes_p90": 60.0,
+                "receipts_p90": 50.0,
+                "progressions_p90": 8.0,
+                "carries_p90": 6.0,
+                "dribbles_p90": 2.0,
+            },
         ),
         profile(
             "peer",
             2024,
             position="Midfield",
-            metrics={"passes_p90": 30.0, "progressions_p90": 4.0},
+            metrics={
+                "passes_p90": 30.0,
+                "receipts_p90": 28.0,
+                "progressions_p90": 4.0,
+                "carries_p90": 3.0,
+                "dribbles_p90": 1.0,
+            },
         ),
     ]
     rows[0]["minutes"] = 900
@@ -229,3 +257,113 @@ def test_mls_next_pro_is_excluded_before_intelligence_population_scoring():
 
     assert output["canonical_player_id"].tolist() == ["senior"]
     assert "MLS NEXT Pro" not in output["competition_name"].tolist()
+
+
+def test_sparse_extreme_evidence_shrinks_toward_neutral_without_null_to_zero():
+    sparse = profile(
+        "sparse",
+        2025,
+        position="Defensive Midfield",
+        metrics={"passes_p90": 100.0, "defensive_actions_p90": 20.0},
+    )
+    peer = profile(
+        "peer",
+        2025,
+        position="Defensive Midfield",
+        metrics={"passes_p90": 20.0, "defensive_actions_p90": 2.0},
+    )
+    output = build_player_intelligence(pd.DataFrame([sparse, peer])).set_index(
+        "canonical_player_id"
+    )
+    row = output.loc["sparse"]
+
+    assert row["current_level_raw"] > row["current_level"] > 50
+    assert row["core_role_coverage"] < 1
+    assert pd.isna(row["xg_p90"])
+
+
+def test_added_current_season_metrics_cannot_manufacture_development():
+    rows = [
+        profile(
+            "stable",
+            2024,
+            position="Centre Forward",
+            metrics={
+                "goals_p90": 0.5,
+                "xg_p90": 0.5,
+                "shots_p90": 3.0,
+                "box_presence_rate": 0.6,
+                "pct_penalty_area": 0.6,
+                "pct_central": 0.6,
+            },
+        ),
+        profile(
+            "stable",
+            2025,
+            position="Centre Forward",
+            metrics={
+                "goals_p90": 0.5,
+                "xg_p90": 0.5,
+                "shots_p90": 3.0,
+                "box_presence_rate": 0.6,
+                "pct_penalty_area": 0.6,
+                "pct_central": 0.6,
+                "assists_p90": 0.9,
+                "xa_p90": 0.8,
+                "chance_creation_p90": 5.0,
+            },
+        ),
+        profile(
+            "peer",
+            2024,
+            position="Centre Forward",
+            metrics={
+                "goals_p90": 0.3,
+                "xg_p90": 0.3,
+                "shots_p90": 2.0,
+                "box_presence_rate": 0.4,
+                "pct_penalty_area": 0.4,
+                "pct_central": 0.4,
+            },
+        ),
+        profile(
+            "peer",
+            2025,
+            position="Centre Forward",
+            metrics={
+                "goals_p90": 0.3,
+                "xg_p90": 0.3,
+                "shots_p90": 2.0,
+                "box_presence_rate": 0.4,
+                "pct_penalty_area": 0.4,
+                "pct_central": 0.4,
+            },
+        ),
+    ]
+    output = build_player_intelligence(pd.DataFrame(rows))
+    current = output[
+        (output["canonical_player_id"] == "stable")
+        & (output["season_start_year"] == 2025)
+    ].iloc[0]
+
+    changes = json.loads(current["development_common_metrics_json"])
+    assert {item["metric"] for item in changes}.isdisjoint(
+        {"assists_p90", "xa_p90", "chance_creation_p90"}
+    )
+
+
+def test_missing_age_has_no_radar_age_bonus_and_is_not_u21_evidence():
+    known = profile(
+        "known",
+        2025,
+        position="Forward",
+        metrics={"goals_p90": 0.5, "xg_p90": 0.5, "shots_p90": 3.0},
+    )
+    unknown = {**known, "player_season_id": "unknown-2025", "canonical_player_id": "unknown", "canonical_person_id": "unknown", "player_name": "unknown", "age": None}
+    output = build_player_intelligence(pd.DataFrame([known, unknown])).set_index(
+        "canonical_player_id"
+    )
+
+    unknown_components = json.loads(output.loc["unknown", "radar_components_json"])
+    assert unknown_components["age_bonus"] == 0
+    assert output.loc["known", "radar_score"] > output.loc["unknown", "radar_score"]

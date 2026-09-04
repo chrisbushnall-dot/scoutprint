@@ -120,26 +120,54 @@ RADAR_DEFAULT_SORTS = {
     "defensive": "radar_score",
 }
 
+RADAR_RECENCY_WEIGHTS = {0: 0.50, 1: 0.30, 2: 0.20}
+RADAR_AGGREGATE_FIELDS = {
+    "radar_score",
+    "breakout_score",
+    "current_level",
+    "current_level_raw",
+    "league_current_performance",
+    "league_current_performance_raw",
+    "output_gap",
+    "goal_gap",
+    "assist_gap",
+    "goal_gap_p90",
+    "assist_gap_p90",
+    "expected_gxa_p90",
+    "actual_ga_p90",
+    "goals_p90",
+    "assists_p90",
+    "xg_p90",
+    "xa_p90",
+}
+
 RADAR_SCORE_MODEL = {
+    "method_version": "real_world_player_judgement_v1",
     "claim": "Transparent ranking of current evidence; not an ability or potential prediction.",
+    "current_performance_definition": (
+        "Supported present performance relative to behavioural-role peers, shrunk toward the "
+        "neutral peer expectation when role-core evidence or sample reliability is incomplete."
+    ),
     "development_definition": (
         "Like-for-like role-component percentile movement across consecutive seasons with at "
-        "least 900 minutes in each; excludes Current Level's minutes uplift and is adjusted by "
-        "the weaker sample."
+        "least 900 minutes in each; compares matched evidence only and reports confidence "
+        "separately."
+    ),
+    "radar_definition": (
+        "Evidence-backed analytical interest, not ability, potential or a future-star prediction."
+    ),
+    "confidence_definition": (
+        "Strength of role-core, supporting, spatial and minutes evidence behind the claim."
     ),
     "radar_weights": {
-        "current_level": 0.40,
-        "development_velocity": 0.15,
-        "age_context": 0.15,
-        "role_underlying_output": 0.15,
-        "minutes_reliability": 0.10,
-        "data_confidence": 0.05,
+        "current_performance": 0.58,
+        "development": 0.16,
+        "underlying_performance": 0.08,
+        "minutes_reliability": 0.08,
+        "evidence_confidence": 0.10,
+        "verified_age_bonus": "0 to 8 points",
     },
-    "breakout_weights": {
-        "radar_score": 0.72,
-        "age_context": 0.18,
-        "development_velocity": 0.10,
-    },
+    "breakout_definition": "Breakouts are ranked directly by Radar Interest.",
 }
 
 CREATOR_ROLES = {
@@ -172,9 +200,11 @@ INTELLIGENCE_COLUMNS = [
     "player_season_id",
     "canonical_person_id",
     "player_name",
+    "source_provider",
     "team_name",
     "competition_name",
     "season_name",
+    "season_start_year",
     "positions",
     "age",
     "minutes",
@@ -187,9 +217,17 @@ INTELLIGENCE_COLUMNS = [
     "role_confidence_score",
     "role_evidence_json",
     "metric_coverage",
+    "score_method_version",
     "current_level",
     "current_level_raw",
     "current_level_components_json",
+    "current_performance_families_json",
+    "core_role_coverage",
+    "supporting_coverage",
+    "spatial_coverage",
+    "current_performance_reliability",
+    "league_current_performance",
+    "league_current_performance_raw",
     "league_population",
     "league_population_factor",
     "sample_factor",
@@ -202,6 +240,8 @@ INTELLIGENCE_COLUMNS = [
     "previous_team",
     "previous_league",
     "development",
+    "development_confidence",
+    "development_confidence_score",
     "development_context_json",
     "role_changed",
     "spatial_change",
@@ -210,6 +250,12 @@ INTELLIGENCE_COLUMNS = [
     "minutes_change",
     "underlying_output_label",
     "output_gap",
+    "goal_gap",
+    "assist_gap",
+    "goal_gap_p90",
+    "assist_gap_p90",
+    "expected_gxa_p90",
+    "actual_ga_p90",
     "goals_p90",
     "assists_p90",
     "xg_p90",
@@ -459,6 +505,7 @@ class ExactScoutprintService:
             "player_season_id": row["player_season_id"],
             "canonical_player_id": row.get("canonical_person_id"),
             "player_name": row.get("player_name"),
+            "source_provider": row.get("source_provider"),
             "club": row.get("team_name"),
             "competition": row.get("competition_name"),
             "season": row.get("season_name"),
@@ -474,10 +521,24 @@ class ExactScoutprintService:
             "role_confidence_score": _safe(row.get("role_confidence_score")),
             "role_evidence": self._decoded_json(row.get("role_evidence_json")),
             "metric_coverage": _safe(row.get("metric_coverage")),
+            "score_method_version": row.get("score_method_version"),
             "current_level": _safe(row.get("current_level")),
             "current_level_raw": _safe(row.get("current_level_raw")),
             "current_level_components": self._decoded_json(
                 row.get("current_level_components_json")
+            ),
+            "current_performance_families": self._decoded_json(
+                row.get("current_performance_families_json")
+            ),
+            "core_role_coverage": _safe(row.get("core_role_coverage")),
+            "supporting_coverage": _safe(row.get("supporting_coverage")),
+            "spatial_coverage": _safe(row.get("spatial_coverage")),
+            "current_performance_reliability": _safe(
+                row.get("current_performance_reliability")
+            ),
+            "league_current_performance": _safe(row.get("league_current_performance")),
+            "league_current_performance_raw": _safe(
+                row.get("league_current_performance_raw")
             ),
             "league_population": _safe(row.get("league_population")),
             "league_population_factor": _safe(row.get("league_population_factor")),
@@ -491,6 +552,10 @@ class ExactScoutprintService:
             "previous_club": row.get("previous_team"),
             "previous_league": row.get("previous_league"),
             "development": _safe(row.get("development")),
+            "development_confidence": row.get("development_confidence"),
+            "development_confidence_score": _safe(
+                row.get("development_confidence_score")
+            ),
             "development_context": self._decoded_json(row.get("development_context_json")),
             "role_changed": bool(_safe(row.get("role_changed")) or False),
             "spatial_change": _safe(row.get("spatial_change")),
@@ -499,6 +564,12 @@ class ExactScoutprintService:
             "minutes_change": _safe(row.get("minutes_change")),
             "underlying_output_label": row.get("underlying_output_label"),
             "output_gap": _safe(row.get("output_gap")),
+            "goal_gap": _safe(row.get("goal_gap")),
+            "assist_gap": _safe(row.get("assist_gap")),
+            "goal_gap_p90": _safe(row.get("goal_gap_p90")),
+            "assist_gap_p90": _safe(row.get("assist_gap_p90")),
+            "expected_gxa_p90": _safe(row.get("expected_gxa_p90")),
+            "actual_ga_p90": _safe(row.get("actual_ga_p90")),
             "goals_p90": _safe(row.get("goals_p90")),
             "assists_p90": _safe(row.get("assists_p90")),
             "xg_p90": _safe(row.get("xg_p90")),
@@ -508,6 +579,7 @@ class ExactScoutprintService:
             "xa_available": bool(_safe(row.get("xa_available")) or False),
             "radar_score": _safe(row.get("radar_score")),
             "breakout_score": _safe(row.get("breakout_score")),
+            "ranking_season_count": _safe(row.get("ranking_season_count")),
             "radar_components": self._decoded_json(row.get("radar_components_json")),
         }
 
@@ -632,16 +704,28 @@ class ExactScoutprintService:
     @staticmethod
     def _radar_mode(frame: pd.DataFrame, mode: str) -> pd.DataFrame:
         if mode == "biggest-risers":
-            return frame[frame["development"] > 0]
+            supported = frame.get(
+                "_latest_development_supported", frame["development"].notna()
+            )
+            return frame[supported & frame["development"].gt(0)]
         if mode == "u21":
             return frame[frame["age"] <= 21]
         if mode == "underlying-output":
+            supported = frame.get(
+                "_latest_underlying_output_supported",
+                frame["underlying_output_label"].eq("Production Lag")
+                & frame["output_gap"].gt(0),
+            )
             return frame[
-                frame["underlying_output_label"].isin({"Production Lag", "Ahead of Results"})
-                & (frame["output_gap"] > 0)
+                supported
+                & frame["underlying_output_label"].eq("Production Lag")
+                & frame["output_gap"].gt(0)
             ]
         if mode == "role-changes":
-            return frame[frame["role_changed"].fillna(False)]
+            supported = frame.get(
+                "_latest_role_change_supported", frame["role_changed"].fillna(False)
+            )
+            return frame[supported]
         if mode == "creators":
             return frame[frame["primary_role"].isin(CREATOR_ROLES)]
         if mode == "scorers":
@@ -651,6 +735,144 @@ class ExactScoutprintService:
         if mode == "defensive":
             return frame[frame["role_group"] == "Defence"]
         return frame
+
+    @staticmethod
+    def _normalized_season_year(frame: pd.DataFrame) -> pd.Series:
+        """Return the product season year, not the provider's raw season year."""
+
+        if "candidate_window" in frame:
+            season = frame["candidate_window"]
+        else:
+            season = pd.Series(pd.NA, index=frame.index, dtype="string")
+        if "season_name" in frame:
+            season = season.fillna(frame["season_name"])
+        return pd.to_numeric(
+            season.astype("string").str.extract(r"^(\d{4})", expand=False),
+            errors="coerce",
+        )
+
+    @staticmethod
+    def _radar_identity(frame: pd.DataFrame) -> pd.Series:
+        if "canonical_person_id" in frame:
+            identity = frame["canonical_person_id"].copy()
+        else:
+            identity = pd.Series(pd.NA, index=frame.index, dtype="object")
+        return identity.fillna(frame["player_season_id"])
+
+    @classmethod
+    def _radar_rolling_frame(
+        cls, source: pd.DataFrame
+    ) -> tuple[pd.DataFrame, int | None, list[str]]:
+        """Build the current-player rolling view from normalized season windows."""
+
+        if source.empty:
+            return source.copy(), None, []
+
+        work = source.copy()
+        work["_normalized_season_year"] = cls._normalized_season_year(work)
+        work = work[work["_normalized_season_year"].notna()].copy()
+        if work.empty:
+            return work, None, []
+
+        latest_year = int(work["_normalized_season_year"].max())
+        work = work[
+            work["_normalized_season_year"].between(
+                latest_year - 2, latest_year, inclusive="both"
+            )
+        ].copy()
+        work["_identity"] = cls._radar_identity(work)
+        work["_confidence_sort"] = pd.to_numeric(
+            work.get("confidence_score", pd.Series(index=work.index)), errors="coerce"
+        )
+        work["_minutes_sort"] = pd.to_numeric(
+            work.get("minutes", pd.Series(index=work.index)), errors="coerce"
+        )
+        work["_player_season_sort"] = work["player_season_id"].astype(str)
+        work = work.sort_values(
+            [
+                "_normalized_season_year",
+                "_identity",
+                "_confidence_sort",
+                "_minutes_sort",
+                "_player_season_sort",
+            ],
+            ascending=[False, True, False, False, True],
+            na_position="last",
+            kind="stable",
+        ).drop_duplicates(["_identity", "_normalized_season_year"], keep="first")
+        ranking_seasons = cls._radar_season_labels(work, latest_year)
+
+        latest = work[work["_normalized_season_year"].eq(latest_year)].copy()
+        if latest.empty:
+            return latest, latest_year, ranking_seasons
+        current_identities = set(latest["_identity"])
+        work = work[work["_identity"].isin(current_identities)].copy()
+
+        season_counts = work.groupby("_identity")["_normalized_season_year"].nunique()
+        latest["ranking_season_count"] = latest["_identity"].map(season_counts).astype(int)
+
+        latest["_latest_development_supported"] = latest["development"].notna()
+        latest["_latest_role_change_supported"] = latest["role_changed"].fillna(False)
+        latest["_latest_underlying_output_supported"] = (
+            latest["underlying_output_label"].eq("Production Lag")
+            & pd.to_numeric(latest["output_gap"], errors="coerce").gt(0)
+        )
+        # Keep the latest row as the dossier identity/context, replacing only fields whose
+        # values are meaningful as cross-season current-performance evidence.
+        for field in RADAR_AGGREGATE_FIELDS:
+            if field not in work.columns:
+                continue
+            values = pd.to_numeric(work[field], errors="coerce")
+            row_weights = work["_normalized_season_year"].map(
+                lambda year: RADAR_RECENCY_WEIGHTS.get(latest_year - int(year), np.nan)
+            )
+            weighted = (values * row_weights).groupby(work["_identity"]).sum(min_count=1)
+            available_weight = row_weights.where(values.notna()).groupby(
+                work["_identity"]
+            ).sum(min_count=1)
+            aggregate = weighted.div(available_weight.replace(0, np.nan)).round(3)
+            mapped = latest["_identity"].map(aggregate)
+            latest[field] = mapped.where(mapped.notna(), latest[field])
+
+        if "development" in work.columns:
+            development = pd.to_numeric(work["development"], errors="coerce")
+            development_weights = work["_normalized_season_year"].map(
+                lambda year: RADAR_RECENCY_WEIGHTS.get(latest_year - int(year), np.nan)
+                if latest_year - int(year) in (0, 1)
+                else np.nan
+            )
+            weighted = (development * development_weights).groupby(
+                work["_identity"]
+            ).sum(min_count=1)
+            available_weight = development_weights.where(development.notna()).groupby(
+                work["_identity"]
+            ).sum(min_count=1)
+            aggregate = weighted.div(available_weight.replace(0, np.nan)).round(3)
+            mapped = latest["_identity"].map(aggregate)
+            latest["development"] = mapped.where(mapped.notna(), latest["development"])
+
+        return (
+            latest,
+            latest_year,
+            ranking_seasons,
+        )
+
+    @staticmethod
+    def _radar_season_labels(frame: pd.DataFrame, latest_year: int) -> list[str]:
+        labels: dict[int, str] = {}
+        for year, group in frame.groupby("_normalized_season_year", sort=False):
+            if pd.isna(year):
+                continue
+            candidates = group.get("candidate_window", pd.Series(dtype=object)).dropna()
+            if candidates.empty:
+                candidates = group.get("season_name", pd.Series(dtype=object)).dropna()
+            labels[int(year)] = str(candidates.iloc[0]) if not candidates.empty else (
+                f"{int(year)}/{str(int(year) + 1)[-2:]}"
+            )
+        return [
+            labels.get(year, f"{year}/{str(year + 1)[-2:]}")
+            for year in range(latest_year, latest_year - 3, -1)
+        ]
 
     def radar(
         self,
@@ -668,14 +890,51 @@ class ExactScoutprintService:
         sort_order: str,
         offset: int,
         limit: int,
-    ) -> tuple[pd.DataFrame, int]:
-        frame = self._radar_mode(self.intelligence_frame, mode)
-        if season:
-            frame = frame[
-                (frame["season_name"] == season) | (frame["candidate_window"] == season)
-            ]
+    ) -> tuple[pd.DataFrame, int, dict[str, Any]]:
+        frame = self.intelligence_frame
+        rolling = not season
+        if rolling:
+            frame, _latest_year, ranking_seasons = self._radar_rolling_frame(frame)
+            ranking = {
+                "ranking_window": "current_3_seasons",
+                "ranking_seasons": ranking_seasons,
+                "ranking_method": (
+                    "Current identities with a latest-season representative; performance values "
+                    "use normalized-season recency weights of 50% latest, 30% prior and 20% oldest, "
+                    "renormalized when a field is unavailable. The returned player_season_id is "
+                    "the latest dossier row."
+                ),
+            }
+        else:
+            season_match = frame["season_name"] == season
+            if "candidate_window" in frame:
+                season_match = season_match | (frame["candidate_window"] == season)
+            frame = frame[season_match]
+            if not frame.empty:
+                frame = (
+                    frame.assign(
+                        _identity=self._radar_identity(frame),
+                        _minutes_sort=pd.to_numeric(frame["minutes"], errors="coerce"),
+                        _player_season_sort=frame["player_season_id"].astype(str),
+                    )
+                    .sort_values(
+                        ["_identity", "_minutes_sort", "_player_season_sort"],
+                        ascending=[True, False, True],
+                        na_position="last",
+                        kind="stable",
+                    )
+                    .drop_duplicates("_identity", keep="first")
+                )
+            ranking = {
+                "ranking_window": "single_season",
+                "ranking_seasons": [season] if season else [],
+                "ranking_method": (
+                    "Historical single-season player-season evidence; no rolling aggregation."
+                ),
+            }
         if league:
             frame = frame[frame["competition_name"] == league]
+        frame = self._radar_mode(frame, mode)
         if minimum_age is not None:
             frame = frame[frame["age"] >= minimum_age]
         if maximum_age is not None:
@@ -700,7 +959,11 @@ class ExactScoutprintService:
             na_position="last",
             kind="stable",
         )
-        return frame.iloc[offset : offset + limit].drop(columns="_player_name"), total
+        return (
+            frame.iloc[offset : offset + limit].drop(columns="_player_name"),
+            total,
+            ranking,
+        )
 
     @staticmethod
     def _league_mode(frame: pd.DataFrame, mode: str) -> pd.DataFrame:
@@ -2188,7 +2451,7 @@ def radar(
         raise HTTPException(status_code=422, detail="sort_order must be asc or desc")
 
     service = get_service()
-    rows, total = service.radar(
+    rows, total, ranking = service.radar(
         mode=mode,
         season=season,
         league=league,
@@ -2218,6 +2481,7 @@ def radar(
         },
         "sort": {"field": selected_sort, "order": sort_order},
         "score_model": RADAR_SCORE_MODEL,
+        **ranking,
         "total": total,
         "offset": offset,
         "limit": limit,

@@ -82,6 +82,34 @@ ROLE_COMPONENTS = {
     for role, weights in ROLE_WEIGHTS.items()
 }
 
+SCORE_METHOD_VERSION = "real_world_player_judgement_v1"
+
+# Families are deliberately role-specific. Core coverage answers whether the evidence needed to
+# make the role's main football claim exists; supporting evidence adds texture but cannot substitute
+# for a missing core family.
+ROLE_SUPPORTING_FAMILIES = {
+    "Box 9": ("creation", "progression", "passing", "attacking_third"),
+    "Linking 9": ("progression", "central", "half_space", "attacking_third"),
+    "Channel Forward": ("creation", "passing", "half_space", "attacking_third"),
+    "Inside Forward": ("creation", "passing", "box", "attacking_third"),
+    "Wide Creator": ("scoring", "box", "half_space", "attacking_third"),
+    "Touchline Winger": ("passing", "scoring", "half_space", "attacking_third"),
+    "Hybrid Scorer-Creator": ("progression", "box", "attacking_third"),
+    "Second Striker": ("progression", "passing", "attacking_third"),
+    "Creative 10": ("scoring", "box", "central", "attacking_third"),
+    "Progressive 8": ("defending", "scoring", "central", "attacking_third"),
+    "Box-to-Box 8": ("creation", "box", "central", "attacking_third"),
+    "Deep Progressor": ("creation", "width", "attacking_third"),
+    "Controller": ("creation", "width", "attacking_third"),
+    "Ball Winner": ("creation", "box", "width", "attacking_third"),
+    "Inverted Fullback": ("creation", "width", "attacking_third"),
+    "Overlapping Fullback": ("passing", "box", "attacking_third"),
+    "Progressive Centre-Back": ("creation", "width", "attacking_third"),
+    "Stopper": ("progression", "width", "attacking_third"),
+}
+
+SPATIAL_FAMILIES = {"box", "central", "width", "half_space", "attacking_third"}
+
 # Development is a season-on-season performance signal, not a playing-time signal.
 # Both seasons need a meaningful sample before their role-relative rates can be compared.
 DEVELOPMENT_MIN_MINUTES = 900
@@ -166,16 +194,18 @@ def _cosine_change(left: Any, right: Any) -> float | None:
 
 def _confidence_score(row: pd.Series) -> float:
     minutes = float(row.get("minutes") or 0) if pd.notna(row.get("minutes")) else 0
-    metric_coverage = float(row.get("metric_coverage") or 0)
+    core = float(row.get("core_role_coverage") or 0)
+    supporting = float(row.get("supporting_coverage") or 0)
+    spatial = float(row.get("spatial_coverage") or 0)
     seasons = float(row.get("career_seasons") or 1)
     tier = {"A": 1.0, "B": 0.86, "C": 0.68}.get(str(row.get("data_tier")), 0.62)
-    spatial = 1.0 if bool(row.get("spatial_available")) else 0.35
     value = (
-        0.30 * min(math.sqrt(max(minutes, 0) / 1800), 1)
-        + 0.25 * metric_coverage
-        + 0.15 * min(seasons / 3, 1)
-        + 0.20 * tier
-        + 0.10 * spatial
+        0.25 * min(math.sqrt(max(minutes, 0) / 1800), 1)
+        + 0.40 * core
+        + 0.10 * supporting
+        + 0.08 * spatial
+        + 0.07 * min(seasons / 3, 1)
+        + 0.10 * tier
     )
     return round(100 * value, 2)
 
@@ -303,37 +333,159 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
 
     frame["role_evidence_json"] = [role_evidence(index) for index in frame.index]
 
-    # Current Level uses role-and-season-relative component percentiles, then exposes its
-    # population and sample reliability adjustment rather than implying a league-strength model.
+    # Current Performance has two explicit peer views. The global view compares the player with
+    # the same behavioural role across Scoutprint; the league view compares within the player's
+    # own competition. Neither applies a hand-written league-strength multiplier.
     frame["role_group"] = frame["primary_role"].map(ROLE_GROUP)
     component_values: list[dict[str, float | None]] = []
+    league_component_values: list[dict[str, float | None]] = []
+    global_component_values: list[dict[str, float | None]] = []
+    family_values: list[dict[str, dict[str, float | None]]] = []
+    raw_values: list[float] = []
+    league_raw_values: list[float] = []
+    core_coverages: list[float] = []
+    supporting_coverages: list[float] = []
+    spatial_coverages: list[float] = []
     role_percentiles: dict[str, pd.Series] = {}
+    league_role_percentiles: dict[str, pd.Series] = {}
     for metric in raw_metrics:
         role_percentiles[metric] = (
             frame.groupby(["season_start_year", "primary_role"], dropna=False)[metric]
             .rank(pct=True, method="average")
             * 100
         )
+        league_role_percentiles[metric] = (
+            frame.groupby(
+                ["competition_name", "season_start_year", "primary_role"], dropna=False
+            )[metric]
+            .rank(pct=True, method="average")
+            * 100
+        )
     for index, row in frame.iterrows():
-        metrics = ROLE_COMPONENTS.get(row["primary_role"], ("passes_p90", "defensive_actions_p90"))
-        unique_metrics = tuple(dict.fromkeys(metrics))
-        component_values.append(
+        role = row["primary_role"]
+        metrics = ROLE_COMPONENTS.get(role, ("passes_p90", "defensive_actions_p90"))
+        supporting_metrics = tuple(
+            metric
+            for trait in ROLE_SUPPORTING_FAMILIES.get(role, ())
+            for metric in TRAIT_METRICS[trait]
+        )
+        unique_metrics = tuple(dict.fromkeys((*metrics, *supporting_metrics)))
+        components = {
+            metric: (
+                float(role_percentiles[metric].at[index])
+                if metric in role_percentiles and pd.notna(role_percentiles[metric].at[index])
+                else None
+            )
+            for metric in unique_metrics
+        }
+        league_components = {
+            metric: (
+                float(league_role_percentiles[metric].at[index])
+                if metric in league_role_percentiles
+                and pd.notna(league_role_percentiles[metric].at[index])
+                else None
+            )
+            for metric in unique_metrics
+        }
+        global_components = {
+            metric: (
+                float(frame.at[index, f"pct_{metric}"])
+                if pd.notna(frame.at[index, f"pct_{metric}"])
+                else None
+            )
+            for metric in raw_metrics
+        }
+        component_values.append(components)
+        league_component_values.append(league_components)
+        global_component_values.append(global_components)
+
+        core_weights = ROLE_WEIGHTS.get(role, {})
+        support_traits = ROLE_SUPPORTING_FAMILIES.get(role, ())
+        support_weight = 1 / len(support_traits) if support_traits else 0.0
+
+        def family_summary(trait: str, weight: float, source: dict[str, float | None]) -> dict[str, float | None]:
+            trait_metrics = TRAIT_METRICS[trait]
+            measured = [source.get(metric) for metric in trait_metrics if source.get(metric) is not None]
+            return {
+                "score": float(np.mean(measured)) if measured else None,
+                "coverage": len(measured) / len(trait_metrics),
+                "weight": weight,
+            }
+
+        families = {
+            trait: family_summary(trait, weight, components)
+            for trait, weight in core_weights.items()
+        }
+        families.update(
             {
-                metric: (
-                    float(role_percentiles[metric].at[index])
-                    if metric in role_percentiles and pd.notna(role_percentiles[metric].at[index])
-                    else None
-                )
-                for metric in unique_metrics
+                trait: family_summary(trait, support_weight, components)
+                for trait in support_traits
+                if trait not in families
             }
         )
+        family_values.append(families)
+
+        core_weight_total = sum(core_weights.values()) or 1.0
+        core_coverage = sum(
+            float(families[trait]["coverage"] or 0) * weight
+            for trait, weight in core_weights.items()
+        ) / core_weight_total
+        support_coverage = (
+            float(np.mean([families[trait]["coverage"] for trait in support_traits]))
+            if support_traits
+            else 0.0
+        )
+        spatial_traits = tuple(
+            trait for trait in (*core_weights.keys(), *support_traits) if trait in SPATIAL_FAMILIES
+        )
+        spatial_coverage = (
+            float(np.mean([families[trait]["coverage"] for trait in spatial_traits]))
+            if spatial_traits
+            else 0.0
+        )
+
+        def weighted_score(
+            source: dict[str, float | None],
+            core: dict[str, float] = core_weights,
+            supporting: tuple[str, ...] = support_traits,
+            per_support_weight: float = support_weight,
+        ) -> float:
+            scored = []
+            weights = []
+            for trait, weight in core.items():
+                values = [source.get(metric) for metric in TRAIT_METRICS[trait]]
+                measured = [value for value in values if value is not None]
+                if measured:
+                    scored.append(float(np.mean(measured)))
+                    weights.append(weight)
+            for trait in supporting:
+                values = [source.get(metric) for metric in TRAIT_METRICS[trait]]
+                measured = [value for value in values if value is not None]
+                if measured:
+                    scored.append(float(np.mean(measured)))
+                    weights.append(0.30 * per_support_weight)
+            return float(np.average(scored, weights=weights)) if scored else np.nan
+
+        raw_values.append(weighted_score(components))
+        league_raw_values.append(weighted_score(league_components))
+        core_coverages.append(core_coverage)
+        supporting_coverages.append(support_coverage)
+        spatial_coverages.append(spatial_coverage)
+
     frame["current_level_components_json"] = [_json(value) for value in component_values]
-    frame["current_level_raw"] = [
-        np.mean([value for value in components.values() if value is not None])
-        if any(value is not None for value in components.values())
-        else np.nan
-        for components in component_values
-    ]
+    frame["league_current_components_json"] = [_json(value) for value in league_component_values]
+    frame["global_metric_components_json"] = [_json(value) for value in global_component_values]
+    frame["current_performance_families_json"] = [_json(value) for value in family_values]
+    frame["current_level_raw"] = raw_values
+    frame["league_current_performance_raw"] = league_raw_values
+    frame["core_role_coverage"] = np.round(core_coverages, 3)
+    frame["supporting_coverage"] = np.round(supporting_coverages, 3)
+    frame["spatial_coverage"] = np.round(spatial_coverages, 3)
+    frame["metric_coverage"] = (
+        0.70 * frame["core_role_coverage"]
+        + 0.20 * frame["supporting_coverage"]
+        + 0.10 * frame["spatial_coverage"]
+    ).round(3)
     league_population = frame.groupby(
         ["competition_name", "season_start_year"], dropna=False
     )["player_season_id"].transform("size")
@@ -344,11 +496,26 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
     frame["sample_factor"] = np.clip(
         np.sqrt(frame["minutes"].fillna(0).clip(lower=0) / 1800), 0, 1
     ).round(3)
+    frame["current_performance_reliability"] = (
+        (
+            0.72 * frame["core_role_coverage"]
+            + 0.18 * frame["supporting_coverage"]
+            + 0.10 * frame["spatial_coverage"]
+        )
+        * (0.60 + 0.40 * frame["sample_factor"])
+    ).clip(0, 1).round(3)
+    # Empirical-Bayes style shrinkage: sparse extreme measurements move toward the neutral
+    # role-peer expectation rather than being set to zero or multiplied by coverage.
     frame["current_level"] = (
-        frame["current_level_raw"]
-        * (0.85 + 0.15 * frame["league_population_factor"])
-        * (0.75 + 0.25 * frame["sample_factor"])
-    ).round(2)
+        50
+        + (frame["current_level_raw"] - 50) * frame["current_performance_reliability"]
+    ).clip(0, 100).round(2)
+    frame["league_current_performance"] = (
+        50
+        + (frame["league_current_performance_raw"] - 50)
+        * frame["current_performance_reliability"]
+    ).clip(0, 100).round(2)
+    frame["score_method_version"] = SCORE_METHOD_VERSION
 
     frame["career_seasons"] = frame.groupby("canonical_person_id")["season_start_year"].transform(
         "nunique"
@@ -371,6 +538,9 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
     frame["previous_current_level_components_json"] = grouped[
         "current_level_components_json"
     ].shift(1)
+    frame["previous_global_metric_components_json"] = grouped[
+        "global_metric_components_json"
+    ].shift(1)
     frame["previous_role"] = grouped["primary_role"].shift(1)
     frame["previous_role_group"] = grouped["role_group"].shift(1)
     frame["previous_team"] = grouped["team_name"].shift(1)
@@ -378,6 +548,7 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
     frame["previous_xg_p90"] = grouped["xg_p90"].shift(1)
     frame["previous_xa_p90"] = grouped["xa_p90"].shift(1)
     frame["previous_minutes"] = grouped["minutes"].shift(1)
+    frame["previous_source_provider"] = grouped["source_provider"].shift(1)
     frame["previous_sample_factor"] = grouped["sample_factor"].shift(1)
     frame["previous_spatial"] = grouped["fp_all_actions"].shift(1)
     consecutive = frame["season_start_year"].eq(frame["previous_season_year"] + 1)
@@ -385,23 +556,53 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
     sufficient_samples = frame["minutes"].ge(DEVELOPMENT_MIN_MINUTES) & frame[
         "previous_minutes"
     ].ge(DEVELOPMENT_MIN_MINUTES)
-    base_comparable = consecutive & comparable_role & sufficient_samples
+    base_comparable = consecutive & sufficient_samples
 
-    def common_component_change(row: pd.Series) -> tuple[float, list[dict[str, float]], float]:
+    def common_component_change(
+        row: pd.Series,
+    ) -> tuple[float, list[dict[str, float]], float, float, float]:
         if not bool(base_comparable.at[row.name]):
-            return np.nan, [], 0.0
-        current = json.loads(row["current_level_components_json"])
-        previous = json.loads(row["previous_current_level_components_json"])
+            return np.nan, [], 0.0, np.nan, np.nan
+        role_changed = row["primary_role"] != row["previous_role"]
+        current = json.loads(
+            row["global_metric_components_json"]
+            if role_changed
+            else row["current_level_components_json"]
+        )
+        previous = json.loads(
+            row["previous_global_metric_components_json"]
+            if role_changed
+            else row["previous_current_level_components_json"]
+        )
         current_available = {key: value for key, value in current.items() if value is not None}
         previous_available = {key: value for key, value in previous.items() if value is not None}
         common = sorted(current_available.keys() & previous_available.keys())
-        denominator = max(len(current_available), len(previous_available), 1)
-        coverage = len(common) / denominator
+        previous_core_traits = set(ROLE_WEIGHTS.get(row["previous_role"], {}))
+        current_core_traits = set(ROLE_WEIGHTS.get(row["primary_role"], {}))
+        stable_core_traits = previous_core_traits & current_core_traits
+        if row["primary_role"] == row["previous_role"]:
+            core_weights = ROLE_WEIGHTS.get(row["primary_role"], {})
+        else:
+            core_weights = {
+                trait: (
+                    ROLE_WEIGHTS[row["previous_role"]][trait]
+                    + ROLE_WEIGHTS[row["primary_role"]][trait]
+                )
+                / 2
+                for trait in stable_core_traits
+            }
+        core_weight_total = sum(core_weights.values()) or 1.0
+        coverage = sum(
+            weight
+            * len(set(TRAIT_METRICS[trait]) & set(common))
+            / len(TRAIT_METRICS[trait])
+            for trait, weight in core_weights.items()
+        ) / core_weight_total
         if (
             len(common) < DEVELOPMENT_MIN_COMMON_METRICS
             or coverage < DEVELOPMENT_MIN_COMMON_COVERAGE
         ):
-            return np.nan, [], coverage
+            return np.nan, [], coverage, np.nan, np.nan
         changes = [
             {
                 "metric": metric,
@@ -411,12 +612,48 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
             }
             for metric in common
         ]
-        return float(np.mean([item["change"] for item in changes])), changes, coverage
+        supporting = (
+            ROLE_SUPPORTING_FAMILIES.get(row["primary_role"], ())
+            if row["primary_role"] == row["previous_role"]
+            else ()
+        )
+        used_traits = set(core_weights) | set(supporting)
+        used_metrics = {
+            metric for trait in used_traits for metric in TRAIT_METRICS[trait]
+        }
+        changes = [item for item in changes if item["metric"] in used_metrics]
+        family_changes: list[float] = []
+        family_previous: list[float] = []
+        family_current: list[float] = []
+        family_weights: list[float] = []
+        for trait, weight in core_weights.items():
+            trait_items = [item for item in changes if item["metric"] in TRAIT_METRICS[trait]]
+            if trait_items:
+                family_changes.append(float(np.mean([item["change"] for item in trait_items])))
+                family_previous.append(float(np.mean([item["previous"] for item in trait_items])))
+                family_current.append(float(np.mean([item["current"] for item in trait_items])))
+                family_weights.append(weight)
+        for trait in supporting:
+            trait_items = [item for item in changes if item["metric"] in TRAIT_METRICS[trait]]
+            if trait_items:
+                family_changes.append(float(np.mean([item["change"] for item in trait_items])))
+                family_previous.append(float(np.mean([item["previous"] for item in trait_items])))
+                family_current.append(float(np.mean([item["current"] for item in trait_items])))
+                family_weights.append(0.30 / max(len(supporting), 1))
+        return (
+            float(np.average(family_changes, weights=family_weights)),
+            changes,
+            coverage,
+            float(np.average(family_previous, weights=family_weights)),
+            float(np.average(family_current, weights=family_weights)),
+        )
 
     component_changes = frame.apply(common_component_change, axis=1)
     frame["development_raw"] = [item[0] for item in component_changes]
     frame["development_common_metrics_json"] = [_json(item[1]) for item in component_changes]
     frame["development_common_coverage"] = [item[2] for item in component_changes]
+    frame["previous_comparable_performance"] = [item[3] for item in component_changes]
+    frame["current_comparable_performance"] = [item[4] for item in component_changes]
     # Compare only like-for-like role-component percentiles, excluding Current Level's minutes
     # adjustment, population-size adjustment, and any evidence available in just one season. Then
     # shrink the movement by the weaker sample reliability. This prevents a 168 -> 3,499 minute
@@ -427,6 +664,30 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
     frame["development"] = (
         frame["development_raw"] * frame["development_reliability"]
     ).round(2)
+    source_comparability = np.where(
+        frame["source_provider"].eq(frame["previous_source_provider"]), 1.0, 0.75
+    )
+    role_comparability = np.where(
+        frame["primary_role"].eq(frame["previous_role"]),
+        1.0,
+        np.where(comparable_role, 0.8, 0.6),
+    )
+    frame["development_confidence_score"] = (
+        100
+        * frame["development_common_coverage"]
+        * frame["development_reliability"]
+        * source_comparability
+        * role_comparability
+    ).where(frame["development"].notna()).round(2)
+    frame["development_confidence"] = np.select(
+        [
+            frame["development_confidence_score"] >= 70,
+            frame["development_confidence_score"] >= 45,
+        ],
+        ["HIGH", "MEDIUM"],
+        default="LOW",
+    )
+    frame.loc[frame["development"].isna(), "development_confidence"] = "UNAVAILABLE"
     frame["role_changed"] = (frame["primary_role"] != frame["previous_role"]).where(
         consecutive, False
     )
@@ -448,14 +709,6 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
                 {
                     "status": "unavailable",
                     "reason": "The prior record is not a consecutive season.",
-                }
-            )
-        if not bool(comparable_role.at[row.name]):
-            return _json(
-                {
-                    "status": "unavailable",
-                    "reason": "The behavioural role group changed; use Role Changes instead.",
-                    "from_role": row["previous_role"],
                 }
             )
         if not bool(sufficient_samples.at[row.name]):
@@ -513,10 +766,23 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
                     "sample-reliability adjusted"
                 ),
                 "minimum_minutes_per_season": DEVELOPMENT_MIN_MINUTES,
-                "previous_performance_percentile": row["previous_current_level_raw"],
-                "current_performance_percentile": row["current_level_raw"],
+                "previous_performance_percentile": row["previous_comparable_performance"],
+                "current_performance_percentile": row["current_comparable_performance"],
                 "sample_reliability": row["development_reliability"],
                 "common_metric_coverage": row["development_common_coverage"],
+                "matched_evidence_coverage": row["development_common_coverage"],
+                "development_confidence": row["development_confidence"],
+                "development_confidence_score": row["development_confidence_score"],
+                "role_comparability": (
+                    "same role"
+                    if row["primary_role"] == row["previous_role"]
+                    else "stable canonical families across role change"
+                ),
+                "source_comparability": (
+                    "same source"
+                    if row["source_provider"] == row["previous_source_provider"]
+                    else "cross-source; confidence reduced"
+                ),
                 "common_metric_changes": json.loads(row["development_common_metrics_json"]),
                 "biggest_metric_changes": biggest[:3],
                 "team_change": row["previous_team"] != row["team_name"],
@@ -529,44 +795,63 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
     frame["development_context_json"] = frame.apply(development_context, axis=1)
     goal_gap = frame["xg_p90"] - frame["goals_p90"]
     assist_gap = frame["xa_p90"] - frame["assists_p90"]
+    underlying_eligible = (
+        frame["minutes"].ge(DEVELOPMENT_MIN_MINUTES)
+        & frame[["goals_p90", "xg_p90", "assists_p90", "xa_p90"]].notna().all(axis=1)
+        & frame["role_group"].eq("Attack")
+    )
+    frame["goal_gap_p90"] = goal_gap.where(underlying_eligible).round(3)
+    frame["assist_gap_p90"] = assist_gap.where(underlying_eligible).round(3)
+    frame["expected_gxa_p90"] = (frame["xg_p90"] + frame["xa_p90"]).where(
+        underlying_eligible
+    ).round(3)
+    frame["actual_ga_p90"] = (frame["goals_p90"] + frame["assists_p90"]).where(
+        underlying_eligible
+    ).round(3)
+    frame["goal_gap"] = (goal_gap * frame["minutes"] / 90).where(underlying_eligible).round(2)
+    frame["assist_gap"] = (assist_gap * frame["minutes"] / 90).where(
+        underlying_eligible
+    ).round(2)
     frame["underlying_output_label"] = np.select(
-        [goal_gap >= 0.15, assist_gap >= 0.10, goal_gap <= -0.15],
-        ["Production Lag", "Ahead of Results", "Finishing Overperformance"],
+        [
+            underlying_eligible & ((goal_gap + assist_gap) >= 0.15),
+            underlying_eligible & ((goal_gap + assist_gap) <= -0.15),
+            underlying_eligible,
+        ],
+        ["Production Lag", "Production Ahead of Underlying", "In Line"],
         default="In Line",
     )
-    frame.loc[frame[["xg_p90", "goals_p90", "xa_p90", "assists_p90"]].isna().all(axis=1), "underlying_output_label"] = "Unavailable"
-    frame["output_gap"] = pd.concat([goal_gap, assist_gap], axis=1).max(
-        axis=1, skipna=True
-    )
+    frame.loc[~underlying_eligible, "underlying_output_label"] = "Unavailable"
+    frame["output_gap"] = (goal_gap + assist_gap).where(underlying_eligible).round(3)
 
-    age_context = np.where(
-        frame["age"].isna(),
-        50,
-        np.clip(100 - np.maximum(frame["age"] - 20, 0) * 5.5, 20, 100),
+    # Age is a capped Radar bonus only. Unknown age receives no bonus and never implies youth.
+    age_bonus = np.where(
+        frame["age"].isna(), 0, np.clip((25 - frame["age"]) * 1.6, 0, 8)
     )
     development_component = np.where(
         frame["development"].isna(), 50, np.clip(50 + frame["development"] * 2, 0, 100)
     )
     reliability = frame["sample_factor"] * 100
-    role_output = frame["current_level_raw"].fillna(0)
+    underlying_interest = np.where(
+        frame["output_gap"].notna(), np.clip(50 + frame["output_gap"] * 25, 0, 100), 50
+    )
     frame["radar_score"] = (
-        0.40 * frame["current_level"].fillna(0)
-        + 0.15 * development_component
-        + 0.15 * age_context
-        + 0.15 * role_output
-        + 0.10 * reliability
-        + 0.05 * frame["confidence_score"]
-    ).round(2)
-    frame["breakout_score"] = (
-        0.72 * frame["radar_score"] + 0.18 * age_context + 0.10 * development_component
-    ).round(2)
+        0.58 * frame["current_level"].fillna(50)
+        + 0.16 * development_component
+        + 0.08 * underlying_interest
+        + 0.08 * reliability
+        + 0.10 * frame["confidence_score"]
+        + age_bonus
+    ).clip(0, 100).round(2)
+    # Breakouts are Radar Interest, retained as an API compatibility alias.
+    frame["breakout_score"] = frame["radar_score"]
     frame["radar_components_json"] = [
         _json(
             {
                 "current_level": current,
                 "development_velocity": development,
-                "age_context": age,
-                "role_underlying_output": output,
+                "age_bonus": age,
+                "underlying_performance": output,
                 "minutes_reliability": reliable,
                 "data_confidence": confidence,
             }
@@ -574,8 +859,8 @@ def build_player_intelligence(history: pd.DataFrame) -> pd.DataFrame:
         for current, development, age, output, reliable, confidence in zip(
             frame["current_level"],
             development_component,
-            age_context,
-            role_output,
+            age_bonus,
+            underlying_interest,
             reliability,
             frame["confidence_score"],
             strict=True,
